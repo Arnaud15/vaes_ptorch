@@ -28,10 +28,10 @@ def gaussian_kl(
     independent components."""
     assert left_sig.size() == right_sig.size()
     assert left_sig.size() == left_mu.size()
-    assert right_sig.size() == right_sig.size()
+    assert right_sig.size() == right_mu.size()
     assert left_sig.dim() == 2
     k = left_sig.size(1)
     trace = torch.sum(left_sig / right_sig, 1)
-    mean_shift = torch.linalg.vector_norm(left_mu - right_mu, dim=1) / right_sig
+    mean_shift = torch.linalg.vector_norm(torch.sqrt(right_sig) * (left_mu - right_mu), dim=1)
     log_det = torch.sum(torch.log(right_sig), 1) - torch.sum(torch.log(left_sig), 1)
     return 0.5 * torch.mean(trace + mean_shift - k + log_det)

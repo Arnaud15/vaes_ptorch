@@ -24,17 +24,22 @@ class VAE(nn.Module):
 
 
 def mlp_layer(in_dim: int, out_dim: int):
-    return nn.Sequential(nn.BatchNorm1d(in_dim), nn.Linear(in_dim, out_dim), nn.ReLU())
+    return nn.Sequential(nn.Linear(in_dim, out_dim), nn.Tanh())
 
 
-class MLPEncoder(nn.Module):
-    def __init__(self, dims: List[int]):
-        super(MLPEncoder, self).__init__()
-        dims = dims + [2]  # output a mean and std param
-        self.layers = nn.Sequential(
-            *[mlp_layer(dims[ix - 1], dims[ix]) for ix in range(1, len(dims))]
-        )
+class GaussianMLP(nn.Module):
+    def __init__(self, in_dim: int, h_dims: List[int], out_dim: int):
+        super(GaussianMLP, self).__init__()
+        self.out_dim = out_dim
+        if not h_dims:
+            self.layers = nn.Sequential(nn.Linear(in_dim, self.out_dim * 2))
+        else:
+            self.layers = nn.Sequential(
+                nn.Linear(in_dim, h_dims[0]),
+                *[mlp_layer(h_dims[ix - 1], h_dims[ix]) for ix in range(1, len(h_dims) - 1)],
+                nn.Linear(h_dims[-1], self.out_dim * 2),
+            )
 
     def forward(self, x):
         out = self.layers(x)
-        return out[:, 0], torch.exp(out[:, 1])
+        return out[:, :self.out_dim], torch.exp(out[:, self.out_dim:])
