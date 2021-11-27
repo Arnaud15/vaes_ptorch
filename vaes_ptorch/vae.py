@@ -18,13 +18,13 @@ class VAE(nn.Module):
 
     def forward(self, x):
         mu_z, sig_z = self.encoder(x)
-        posterior_z = sample_gaussian(mu=mu_z, std=sig_z)
+        posterior_z = sample_gaussian(mu=mu_z, var=sig_z)
         mu_x, sig_x = self.decoder(posterior_z)
         return VaeOutput(mu_x=mu_x, sig_x=sig_x, mu_z=mu_z, sig_z=sig_z)
 
 
 def mlp_layer(in_dim: int, out_dim: int):
-    return nn.Sequential(nn.Linear(in_dim, out_dim), nn.Tanh())
+    return nn.Sequential(nn.Linear(in_dim, out_dim), nn.ReLU())
 
 
 class GaussianMLP(nn.Module):
@@ -36,10 +36,13 @@ class GaussianMLP(nn.Module):
         else:
             self.layers = nn.Sequential(
                 nn.Linear(in_dim, h_dims[0]),
-                *[mlp_layer(h_dims[ix - 1], h_dims[ix]) for ix in range(1, len(h_dims) - 1)],
+                *[
+                    mlp_layer(h_dims[ix - 1], h_dims[ix])
+                    for ix in range(1, len(h_dims) - 1)
+                ],
                 nn.Linear(h_dims[-1], self.out_dim * 2),
             )
 
     def forward(self, x):
         out = self.layers(x)
-        return out[:, :self.out_dim], torch.exp(out[:, self.out_dim:])
+        return out[:, : self.out_dim], torch.exp(out[:, self.out_dim :])

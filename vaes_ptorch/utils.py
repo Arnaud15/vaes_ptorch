@@ -5,12 +5,12 @@ import torch.nn as nn
 from torch import Tensor
 
 
-def sample_gaussian(mu: Tensor, std: Tensor) -> Tensor:
+def sample_gaussian(mu: Tensor, var: Tensor) -> Tensor:
     """Draw samples from a multivariate gaussian distribution.
 
-    Assumes independent components and hence a "flat" `std` parameter."""
-    assert mu.size() == std.size()
-    return mu + std * torch.randn_like(mu)
+    Assumes independent components and hence a "flat" `var` parameter."""
+    assert mu.size() == var.size()
+    return mu + torch.sqrt(var) * torch.randn_like(mu)
 
 
 def update_running(curr: Optional[float], obs: float, alpha: float) -> float:
@@ -32,6 +32,6 @@ def gaussian_kl(
     assert left_sig.dim() == 2
     k = left_sig.size(1)
     trace = torch.sum(left_sig / right_sig, 1)
-    mean_shift = torch.linalg.vector_norm(torch.sqrt(right_sig) * (left_mu - right_mu), dim=1)
+    mean_shift = torch.sum((left_mu - right_mu) ** 2 / right_sig)
     log_det = torch.sum(torch.log(right_sig), 1) - torch.sum(torch.log(left_sig), 1)
     return 0.5 * torch.mean(trace + mean_shift - k + log_det)
