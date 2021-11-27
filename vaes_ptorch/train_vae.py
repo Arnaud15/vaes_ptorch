@@ -1,8 +1,9 @@
-from vaes_ptorch.args import TrainArgs
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
-from vaes_ptorch.utils import update_running
-from vaes_ptorch.vae import VAE
+
+from .args import TrainArgs
+from .utils import update_running
+from .vae import VAE
 
 
 def train(data: DataLoader, vae: VAE, optimizer: Optimizer, args: TrainArgs):

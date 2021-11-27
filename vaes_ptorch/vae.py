@@ -4,7 +4,8 @@ from typing import List
 import torch
 import torch.nn as nn
 from torch import Tensor
-from vaes_ptorch.utils import sample_gaussian
+
+from .utils import sample_gaussian
 
 VaeOutput = namedtuple("VaeOutput", ["mu_x", "sig_x", "mu_z", "sig_z"])
 

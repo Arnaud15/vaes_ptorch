@@ -3,8 +3,9 @@ from typing import Tuple
 import torch
 import torch.nn as nn
 from torch import Tensor
-from vaes_ptorch.utils import gaussian_kl
-from vaes_ptorch.vae import VaeOutput
+
+from .utils import gaussian_kl
+from .vae import VaeOutput
 
 
 def elbo(x: Tensor, vae_output: VaeOutput) -> Tuple[Tensor, str]:
