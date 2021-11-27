@@ -10,7 +10,7 @@ DATA_FILE_NAME = "old_faithful.csv"
 
 def read_saved(path: str) -> Tuple[np.ndarray, np.ndarray]:
     """Reads and returns saved old faithful data stored in csv format."""
-    with open(path, 'r') as data_file:
+    with open(path, "r") as data_file:
         reader = csv.reader(data_file)
         eruption_times, wait_times = [], []
         for row in reader:
@@ -23,7 +23,7 @@ def read_saved(path: str) -> Tuple[np.ndarray, np.ndarray]:
 def save_data(path: str, eruptions: np.ndarray, waits: np.ndarray):
     """Save old faithful data stored in csv format."""
     assert len(eruptions) == len(waits)
-    with open(path, 'w') as data_file:
+    with open(path, "w") as data_file:
         writer = csv.writer(data_file)
         for ix, er in enumerate(eruptions):
             writer.writerow([er, waits[ix]])
