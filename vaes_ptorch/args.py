@@ -1,46 +1,62 @@
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional
 
 
 @dataclass
-class KLAnnealing:
-    num_epochs: int
-    reconstruction_epochs: int
-    kl_warmup_epochs: int
+class DivAnnealing:
+    """It is useful, to stabilize VAE training, to tune the scale of the
+    divergence term in the VAE loss over time.
+
+
+    This class supports the bare-bones scheduling approach
+    - constant `start_scale` for `start_epochs`
+    - linear progress from `start_scale` to `end_scale` for `linear_epochs`
+    - constant `end_scale` thereafter
+    """
+
+    start_scale: float
+    end_scale: float
+    start_epochs: int
+    linear_epochs: int
 
     def __post_init__(self):
-        assert 0 <= self.reconstruction_epochs, self
-        assert 0 <= self.kl_warmup_epochs, self
+        assert 0 <= self.start_epochs, self
+        assert 0 <= self.linear_epochs, self
+        assert self.start_scale >= 0.0, self
+        assert self.end_scale >= 0.0, self
         self.epoch = 0
 
-    def get_kl_scale(self):
-        if self.epoch >= (self.kl_warmup_epochs + self.reconstruction_epochs):
-            return 1.0
-        elif self.epoch >= self.reconstruction_epochs:
-            if not self.kl_warmup_epochs:
-                return 1.0
+    def get_div_scale(self):
+        if self.epoch >= (self.linear_epochs + self.start_epochs):
+            return self.end_scale
+        elif self.epoch >= self.start_epochs:
+            if not self.linear_epochs:
+                return self.end_scale
             else:
-                progress = 1 + self.epoch - self.reconstruction_epochs
-                todo = self.kl_warmup_epochs
+                progress = 1 + self.epoch - self.start_epochs
+                todo = self.linear_epochs
                 return progress / todo
         else:
-            return 0.0
+            return self.start_scale
 
     def step(self):
         self.epoch += 1
 
 
-@dataclass
+@dataclass(frozen=True)
 class TrainArgs:
     num_epochs: int
+    info_vae: bool = False
     print_every: int = 0  # never print if zero
+    call_every: int = 0  # never use the callback if zero
+    callback: Optional[Callable] = None
     smoothing: float = 0.9
-    kl_annealing: Optional[KLAnnealing] = None
+    div_annealing: Optional[DivAnnealing] = None
 
     def __post_init__(self):
-        if self.kl_annealing is None:
-            self.kl_annealing = KLAnnealing(
-                num_epochs=self.num_epochs, reconstruction_epochs=0, kl_warmup_epochs=0
+        if self.call_every:
+            assert self.callback is not None
+        if self.div_annealing is None:
+            self.div_annealing = DivAnnealing(
+                start_scale=1.0, end_scale=1.0, start_epochs=0, linear_epochs=0
             )
-        else:
-            assert self.kl_annealing.num_epochs == self.num_epochs

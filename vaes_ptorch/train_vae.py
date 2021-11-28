@@ -2,7 +2,7 @@ from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 
 from .args import TrainArgs
-from .elbo import elbo
+from .losses import elbo_loss, info_vae_loss
 from .utils import update_running
 from .vae import VAE
 
@@ -14,21 +14,26 @@ def train(data: DataLoader, vae: VAE, optimizer: Optimizer, args: TrainArgs):
     vae.train()
     for _ in range(args.num_epochs):
         for x in data:
-            kl_scale = args.kl_annealing.get_kl_scale()
+            div_scale = args.div_annealing.get_div_scale()
             x = x[0]
             optimizer.zero_grad()
-            loss, debug_info = elbo(x, vae(x), scale=kl_scale)
+            if args.info_vae:
+                loss, debug_info = info_vae_loss(x, vae(x), scale=div_scale)
+            else:
+                loss, debug_info = elbo_loss(x, vae(x), scale=div_scale)
             loss.backward()
             optimizer.step()
-            step += 1
 
             smooth_loss = update_running(smooth_loss, loss.item(), alpha=args.smoothing)
             if args.print_every and step % args.print_every == 0:
                 print(
-                    f"Step: {step} | ELBO: {smooth_loss:.5f} | KL scale: {kl_scale:.3f}"
+                    f"Step: {step} | Loss: {smooth_loss:.5f} | Div scale: {div_scale:.3f}"
                 )
                 if debug_info is not None:
                     print(debug_info)
+            if args.call_every and step % args.call_every == 0:
+                args.callback(vae, x, step)
 
-        args.kl_annealing.step()
-    return vae
+            step += 1
+
+        args.div_annealing.step()
