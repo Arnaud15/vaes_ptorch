@@ -69,4 +69,4 @@ def rbf_kernel(left_samples: Tensor, right_samples: Tensor, bandwidth: float) ->
     assert square_dists.dim() == 1
     assert square_dists.size(0) == left_size * right_size
 
-    return torch.mean(-0.5 * square_dists / bandwidth)
+    return torch.mean(torch.exp(-0.5 * square_dists / bandwidth))
