@@ -28,8 +28,9 @@ def mlp_layer(in_dim: int, out_dim: int):
 
 
 class GaussianMLP(nn.Module):
-    def __init__(self, in_dim: int, h_dims: List[int], out_dim: int):
+    def __init__(self, in_dim: int, h_dims: List[int], out_dim: int, min_var: float = 0.0):
         super(GaussianMLP, self).__init__()
+        self.min_var = min_var
         self.out_dim = out_dim
         if not h_dims:
             self.layers = nn.Sequential(nn.Linear(in_dim, self.out_dim * 2))
@@ -45,4 +46,4 @@ class GaussianMLP(nn.Module):
 
     def forward(self, x):
         out = self.layers(x)
-        return out[:, : self.out_dim], torch.exp(out[:, self.out_dim :])
+        return out[:, : self.out_dim], torch.exp(out[:, self.out_dim :]) + self.min_var
