@@ -35,7 +35,9 @@ class DivAnnealing:
             else:
                 progress = 1 + self.epoch - self.start_epochs
                 todo = self.linear_epochs
-                return (progress / todo) * (self.end_scale - self.start_scale) + self.start_scale
+                return (progress / todo) * (
+                    self.end_scale - self.start_scale
+                ) + self.start_scale
         else:
             return self.start_scale
 

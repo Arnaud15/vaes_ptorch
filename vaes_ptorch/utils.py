@@ -9,7 +9,7 @@ def sample_gaussian(mu: Tensor, var: Tensor) -> Tensor:
     """Draw samples from a multivariate gaussian distribution.
 
     Assumes independent components and hence a "flat" `var` parameter."""
-    assert mu.size() == var.size()
+    assert mu.size() == var.size(), (mu.size(), var.size())
 
     return mu + torch.sqrt(var) * torch.randn_like(mu)
 
