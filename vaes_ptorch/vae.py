@@ -2,8 +2,8 @@ from collections import namedtuple
 
 import torch.nn as nn
 
-from .utils import sample_gaussian
 from .models import GaussianModel
+from .utils import sample_gaussian
 
 VaeOutput = namedtuple("VaeOutput", ["mu_x", "sig_x", "mu_z", "sig_z"])
 
