@@ -16,6 +16,7 @@ def train(
     optimizer: Optimizer,
     args: TrainArgs,
     eval_data: Optional[DataLoader] = None,
+    device: str = "cpu",
 ):
     """Bare bones VAE training loop"""
     step = 0
@@ -24,7 +25,7 @@ def train(
         vae.train()
         for x in train_data:
             div_scale = args.div_annealing.get_div_scale()  # type: ignore
-            x = x[0]
+            x = x[0].to(device)
             optimizer.zero_grad()
             if args.info_vae:
                 loss, debug_info = info_vae_loss(x, vae(x), scale=div_scale)
@@ -33,7 +34,9 @@ def train(
             loss.backward()
             optimizer.step()
 
-            smooth_loss = update_running(smooth_loss, loss.item(), alpha=args.smoothing)
+            smooth_loss = update_running(
+                smooth_loss, loss.item(), alpha=args.smoothing
+            )
             if args.print_every and step % args.print_every == 0:
                 print(
                     f"Step: {step} | Loss: {smooth_loss:.5f} | Div scale: {div_scale:.3f}"
@@ -49,18 +52,20 @@ def train(
 
         if args.eval_every and epoch_ix % args.eval_every == 0:
             assert eval_data is not None
-            eval_elbo = evaluate(eval_data, vae)
-            print(f"ELBO at the end of epoch #{epoch_ix + 1} is {eval_elbo:.5f}")
+            eval_elbo = evaluate(eval_data, vae, device=device)
+            print(
+                f"ELBO at the end of epoch #{epoch_ix + 1} is {eval_elbo:.5f}"
+            )
 
 
-def evaluate(data: DataLoader, vae: GaussianVAE):
+def evaluate(data: DataLoader, vae: GaussianVAE, device: str = "cpu"):
     """Evaluate the ELBO of a Gaussian VAE on unseen validation data."""
     step = 0
     total_loss = 0.0
     vae.eval()
     with torch.no_grad():
         for x in data:
-            x = x[0]
+            x = x[0].to(device)
             loss, _ = elbo_loss(x, vae(x), scale=0.0)
             total_loss += loss.item()
             step += 1

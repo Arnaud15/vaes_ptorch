@@ -7,7 +7,11 @@ import torch.nn as nn
 
 class GaussianModel(nn.Module):
     def __init__(
-        self, model: nn.Module, out_dim: int, split_dim: int = 1, min_var: float = 0.0
+        self,
+        model: nn.Module,
+        out_dim: int,
+        split_dim: int = 1,
+        min_var: float = 0.0,
     ):
         super(GaussianModel, self).__init__()
         assert out_dim > 0, out_dim
@@ -82,7 +86,10 @@ class CNN(nn.Module):
             in_c = out_c
         self.layers.append(nn.Flatten(start_dim=1, end_dim=-1))
         self.layers.append(
-            nn.Linear(in_features=f_map_size * f_map_size * out_c, out_features=out_dim)
+            nn.Linear(
+                in_features=f_map_size * f_map_size * out_c,
+                out_features=out_dim,
+            )
         )
 
     def forward(self, x):
@@ -110,7 +117,8 @@ class DeCNN(nn.Module):
         self.layers = nn.ModuleList()
         self.layers.append(
             nn.Linear(
-                in_features=in_dim, out_features=f_map_size * f_map_size * channel_size
+                in_features=in_dim,
+                out_features=f_map_size * f_map_size * channel_size,
             )
         )
         self.layers.append(
@@ -132,7 +140,10 @@ class DeCNN(nn.Module):
                 self.layers.append(nn.BatchNorm2d(num_features=out_c))
             self.layers.append(
                 nn.ConvTranspose2d(
-                    in_channels=out_c, out_channels=out_c, kernel_size=2, stride=2
+                    in_channels=out_c,
+                    out_channels=out_c,
+                    kernel_size=2,
+                    stride=2,
                 )
             )
             in_c = out_c
