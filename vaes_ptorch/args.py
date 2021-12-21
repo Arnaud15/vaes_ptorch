@@ -52,6 +52,7 @@ class TrainArgs:
     print_every: int = 0  # never print if zero
     call_every: int = 0  # never use the callback if zero
     callback: Optional[Callable] = None
+    eval_every: int = 0
     smoothing: float = 0.9
     div_annealing: Optional[DivAnnealing] = None
 

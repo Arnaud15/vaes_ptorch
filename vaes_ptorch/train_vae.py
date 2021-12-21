@@ -1,3 +1,6 @@
+from typing import Optional
+
+import torch
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 
@@ -7,16 +10,21 @@ from .utils import update_running
 from .vae import GaussianVAE
 
 
-def train(data: DataLoader, vae: GaussianVAE, optimizer: Optimizer, args: TrainArgs):
+def train(
+    train_data: DataLoader,
+    vae: GaussianVAE,
+    optimizer: Optimizer,
+    args: TrainArgs,
+    eval_data: Optional[DataLoader] = None,
+):
     """Bare bones VAE training loop"""
     step = 0
     smooth_loss = None
-    vae.train()
-    for _ in range(args.num_epochs):
-        for x in data:
+    for epoch_ix in range(args.num_epochs):
+        vae.train()
+        for x in train_data:
             div_scale = args.div_annealing.get_div_scale()  # type: ignore
             x = x[0]
-            # print(x.shape)
             optimizer.zero_grad()
             if args.info_vae:
                 loss, debug_info = info_vae_loss(x, vae(x), scale=div_scale)
@@ -38,3 +46,23 @@ def train(data: DataLoader, vae: GaussianVAE, optimizer: Optimizer, args: TrainA
             step += 1
 
         args.div_annealing.step()  # type: ignore
+
+        if args.eval_every and epoch_ix % args.eval_every == 0:
+            assert eval_data is not None
+            eval_elbo = evaluate(eval_data, vae)
+            print(f"ELBO at the end of epoch #{epoch_ix + 1} is {eval_elbo:.5f}")
+
+
+def evaluate(data: DataLoader, vae: GaussianVAE):
+    """Evaluate the ELBO of a Gaussian VAE on unseen validation data."""
+    step = 0
+    total_loss = 0.0
+    vae.eval()
+    with torch.no_grad():
+        for x in data:
+            x = x[0]
+            loss, _ = elbo_loss(x, vae(x), scale=0.0)
+            total_loss += loss.item()
+            step += 1
+    eval_nll = total_loss / max(step, 1)
+    return eval_nll
