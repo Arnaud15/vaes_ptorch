@@ -34,9 +34,7 @@ def train(
             loss.backward()
             optimizer.step()
 
-            smooth_loss = update_running(
-                smooth_loss, loss.item(), alpha=args.smoothing
-            )
+            smooth_loss = update_running(smooth_loss, loss.item(), alpha=args.smoothing)
             if args.print_every and step % args.print_every == 0:
                 print(
                     f"Step: {step} | Loss: {smooth_loss:.5f} | Div scale: {div_scale:.3f}"
@@ -53,9 +51,7 @@ def train(
         if args.eval_every and epoch_ix % args.eval_every == 0:
             assert eval_data is not None
             eval_elbo = evaluate(eval_data, vae, device=device)
-            print(
-                f"ELBO at the end of epoch #{epoch_ix + 1} is {eval_elbo:.5f}"
-            )
+            print(f"ELBO at the end of epoch #{epoch_ix + 1} is {eval_elbo:.5f}")
 
 
 def evaluate(data: DataLoader, vae: GaussianVAE, device: str = "cpu"):

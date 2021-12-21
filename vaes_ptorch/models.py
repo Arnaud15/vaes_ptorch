@@ -7,11 +7,7 @@ import torch.nn as nn
 
 class GaussianModel(nn.Module):
     def __init__(
-        self,
-        model: nn.Module,
-        out_dim: int,
-        split_dim: int = 1,
-        min_var: float = 0.0,
+        self, model: nn.Module, out_dim: int, split_dim: int = 1, min_var: float = 0.0,
     ):
         super(GaussianModel, self).__init__()
         assert out_dim > 0, out_dim
@@ -59,6 +55,7 @@ class CNN(nn.Module):
         in_channels: int,
         out_channels: List[int],
         kernel_sizes: List[int],
+        downsampling: List[bool],
         bn: bool,
         f_map_size: int,
         out_dim: int,
@@ -67,11 +64,15 @@ class CNN(nn.Module):
         assert in_channels > 0
         assert out_dim > 0
         assert f_map_size > 0
-        assert len(out_channels) == len(kernel_sizes)
+        assert len(out_channels) == len(kernel_sizes) and len(out_channels) == len(
+            downsampling
+        )
 
         self.layers = nn.ModuleList()
         in_c = in_channels
-        for (out_c, k_size) in zip(out_channels, kernel_sizes):
+        for (out_c, k_size, downsample) in zip(
+            out_channels, kernel_sizes, downsampling
+        ):
             self.layers.append(
                 nn.Conv2d(
                     in_channels=in_c,
@@ -82,13 +83,13 @@ class CNN(nn.Module):
             )
             if bn:
                 self.layers.append(nn.BatchNorm2d(num_features=out_c))
-            self.layers.append(nn.MaxPool2d(kernel_size=2, stride=2))
+            if downsample:
+                self.layers.append(nn.MaxPool2d(kernel_size=2, stride=2))
             in_c = out_c
         self.layers.append(nn.Flatten(start_dim=1, end_dim=-1))
         self.layers.append(
             nn.Linear(
-                in_features=f_map_size * f_map_size * out_c,
-                out_features=out_dim,
+                in_features=f_map_size * f_map_size * out_c, out_features=out_dim,
             )
         )
 
@@ -106,19 +107,21 @@ class DeCNN(nn.Module):
         channel_size: int,
         out_channels: List[int],
         kernel_sizes: List[int],
+        downsampling: List[bool],
         bn: bool,
     ):
         super(DeCNN, self).__init__()
         assert in_dim > 0
         assert f_map_size > 0
         assert channel_size > 0
-        assert len(out_channels) == len(kernel_sizes)
+        assert len(out_channels) == len(kernel_sizes) and len(out_channels) == len(
+            downsampling
+        )
 
         self.layers = nn.ModuleList()
         self.layers.append(
             nn.Linear(
-                in_features=in_dim,
-                out_features=f_map_size * f_map_size * channel_size,
+                in_features=in_dim, out_features=f_map_size * f_map_size * channel_size,
             )
         )
         self.layers.append(
@@ -127,7 +130,9 @@ class DeCNN(nn.Module):
             )
         )
         in_c = channel_size
-        for (out_c, k_size) in zip(out_channels, kernel_sizes):
+        for (out_c, k_size, downsample) in zip(
+            out_channels, kernel_sizes, downsampling
+        ):
             self.layers.append(
                 nn.Conv2d(
                     in_channels=in_c,
@@ -138,14 +143,12 @@ class DeCNN(nn.Module):
             )
             if bn:
                 self.layers.append(nn.BatchNorm2d(num_features=out_c))
-            self.layers.append(
-                nn.ConvTranspose2d(
-                    in_channels=out_c,
-                    out_channels=out_c,
-                    kernel_size=2,
-                    stride=2,
+            if downsample:
+                self.layers.append(
+                    nn.ConvTranspose2d(
+                        in_channels=out_c, out_channels=out_c, kernel_size=2, stride=2,
+                    )
                 )
-            )
             in_c = out_c
 
     def forward(self, x):
