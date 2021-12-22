@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Callable, Optional
 
+from .losses import Nll
+
 
 @dataclass
 class DivAnnealing:
@@ -55,6 +57,7 @@ class TrainArgs:
     eval_every: int = 0
     smoothing: float = 0.9
     div_annealing: Optional[DivAnnealing] = None
+    likelihood: Nll = Nll.Gaussian
 
     def __post_init__(self):
         if self.call_every:

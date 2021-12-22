@@ -17,5 +17,10 @@ class GaussianVAE(nn.Module):
     def forward(self, x):
         mu_z, sig_z = self.encoder(x)
         posterior_z = sample_gaussian(mu=mu_z, var=sig_z)
-        mu_x, sig_x = self.decoder(posterior_z)
+        try:
+            mu_x, sig_x = self.decoder(posterior_z)
+        except ValueError:
+            # too many values to unpack
+            mu_x = self.decoder(posterior_z)
+            sig_x = None
         return VaeOutput(mu_x=mu_x, sig_x=sig_x, mu_z=mu_z, sig_z=sig_z)

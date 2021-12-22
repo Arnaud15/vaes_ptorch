@@ -1,3 +1,4 @@
+import enum
 from typing import Optional, Tuple
 
 import torch
@@ -8,8 +9,13 @@ from .utils import gaussian_kl, rbf_kernel
 from .vae import VaeOutput
 
 
+class Nll(enum.Enum):
+    Gaussian = enum.auto()
+    Bernoulli = enum.auto()
+
+
 def elbo_loss(
-    x: Tensor, vae_output: VaeOutput, scale: float = 1.0
+    x: Tensor, vae_output: VaeOutput, nll_type: Nll, scale: float = 1.0
 ) -> Tuple[Tensor, str]:
     """Computes the ELBO (Evidence Lower Bound) loss and returns the loss along
     with debug information about the different loss components.
@@ -27,10 +33,22 @@ def elbo_loss(
     From the original VAE paper: https://arxiv.org/abs/1312.6114.
     """
     assert scale >= 0.0
+    assert x.dim() > 1  # assume the first dimension is the batch
+    batch_size = x.size(0)
+    assert batch_size > 0
 
-    nll = nn.GaussianNLLLoss(reduction="mean", eps=1.0)(
-        x, target=vae_output.mu_x, var=vae_output.sig_x
-    )
+    if nll_type == Nll.Gaussian:
+        nll = nn.GaussianNLLLoss(reduction="sum", eps=1.0)(
+            vae_output.mu_x, target=x, var=vae_output.sig_x
+        )
+    elif nll_type == Nll.Bernoulli:
+        nll = nn.BCEWithLogitsLoss(reduction="sum")(vae_output.mu_x, target=x)
+    else:
+        raise ValueError(
+            f"incorrect negative log likelihood type, found {nll_type} but expected Gaussian or Bernoulli"
+        )
+    nll /= batch_size
+    assert not nll.dim(), nll.dim()
 
     kl_div = gaussian_kl(
         left_mu=vae_output.mu_z,
@@ -41,8 +59,9 @@ def elbo_loss(
     return nll + scale * kl_div, f"NLL: {nll.item():.5f} | KL: {kl_div.item():.5f}"
 
 
+# TODO -> merge with the above elbo, only the div differs...
 def info_vae_loss(
-    x: Tensor, vae_output: VaeOutput, scale: float = 1.0
+    x: Tensor, vae_output: VaeOutput, nll_type: Nll, scale: float = 1.0
 ) -> Tuple[Tensor, str]:
     """Computes the InfoVAE loss.
 
@@ -55,10 +74,22 @@ def info_vae_loss(
     https://ermongroup.github.io/blog/a-tutorial-on-mmd-variational-autoencoders/.
     """
     assert scale >= 0.0
+    assert x.dim() > 1  # assume the first dimension is the batch
+    batch_size = x.size(0)
+    assert batch_size > 0
 
-    nll = nn.GaussianNLLLoss(reduction="mean", eps=1.0)(
-        x, target=vae_output.mu_x, var=vae_output.sig_x
-    )
+    if nll_type == Nll.Gaussian:
+        nll = nn.GaussianNLLLoss(reduction="sum", eps=1.0)(
+            vae_output.mu_x, target=x, var=vae_output.sig_x
+        )
+    elif nll_type == Nll.Bernoulli:
+        nll = nn.BCEWithLogitsLoss(reduction="sum")(vae_output.mu_x, target=x)
+    else:
+        raise ValueError(
+            f"incorrect negative log likelihood type, found {nll_type} but expected Gaussian or Bernoulli"
+        )
+    nll /= batch_size
+    assert not nll.dim(), nll.dim()
 
     z_samples = (
         torch.randn_like(vae_output.mu_z) * torch.sqrt(vae_output.sig_z)
