@@ -5,7 +5,7 @@ from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 
 from .args import TrainArgs
-from .losses import Nll, elbo_loss, info_vae_loss
+from .losses import Divergence, Likelihood, elbo_loss
 from .utils import update_running
 from .vae import GaussianVAE
 
@@ -21,20 +21,20 @@ def train(
     """Bare bones VAE training loop"""
     step = 0
     smooth_loss = None
+    divergence = Divergence.MMD if args.info_vae else Divergence.KL
     for epoch_ix in range(args.num_epochs):
         vae.train()
         for x in train_data:
             div_scale = args.div_annealing.get_div_scale()  # type: ignore
             x = x[0].to(device)
             optimizer.zero_grad()
-            if args.info_vae:
-                loss, debug_info = info_vae_loss(
-                    x, vae(x), nll_type=args.likelihood, scale=div_scale
-                )
-            else:
-                loss, debug_info = elbo_loss(
-                    x, vae(x), nll_type=args.likelihood, scale=div_scale
-                )
+            loss, (elbo, div) = elbo_loss(
+                x,
+                vae(x),
+                nll_type=args.likelihood,
+                div_type=divergence,
+                div_scale=div_scale,
+            )
             loss.backward()
             optimizer.step()
 
@@ -43,10 +43,9 @@ def train(
                 print(
                     f"Step: {step} | Loss: {smooth_loss:.5f} | Div scale: {div_scale:.3f}"
                 )
-                if debug_info is not None:
-                    print(debug_info)
-            if args.call_every and step % args.call_every == 0:
-                args.callback(vae, x, step)  # type: ignore
+                print(
+                    f"NLL({args.likelihood}): {elbo:.5f} | Divergence({divergence}): {div:.5f}"
+                )
 
             step += 1
 
@@ -62,11 +61,14 @@ def evaluate(data: DataLoader, vae: GaussianVAE, args: TrainArgs, device: str = 
     """Evaluate the ELBO of a Gaussian VAE on unseen validation data."""
     step = 0
     total_loss = 0.0
+    divergence = Divergence.MMD if args.info_vae else Divergence.KL
     vae.eval()
     with torch.no_grad():
         for x in data:
             x = x[0].to(device)
-            loss, _ = elbo_loss(x, vae(x), nll_type=args.likelihood, scale=0.0)
+            loss, _ = elbo_loss(
+                x, vae(x), div_type=divergence, nll_type=args.likelihood, div_scale=0.0,
+            )
             total_loss += loss.item()
             step += 1
     eval_nll = total_loss / max(step, 1)

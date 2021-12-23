@@ -1,17 +1,17 @@
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-from .losses import Nll
+from .losses import Divergence, Likelihood
 
 
 @dataclass
 class DivAnnealing:
-    """It is useful, to stabilize VAE training, to tune the scale of the
-    divergence term in the VAE loss over time.
+    """To stabilize the training of a VAE, it is useful to anneal the scale of the
+    divergence term in the ELBO.
 
 
-    This class supports the bare-bones scheduling approach
-    - constant `start_scale` for `start_epochs`
+    This class supports a bare-bones scheduling approach for this divergence scale:
+    - constant at `start_scale` for `start_epochs`
     - linear progress from `start_scale` to `end_scale` for `linear_epochs`
     - constant `end_scale` thereafter
     """
@@ -49,6 +49,10 @@ class DivAnnealing:
 
 @dataclass(frozen=True)
 class TrainArgs:
+    """
+    VAE training parameters for an experiment
+    """
+
     num_epochs: int
     info_vae: bool = False
     print_every: int = 0  # never print if zero
@@ -57,7 +61,7 @@ class TrainArgs:
     eval_every: int = 0
     smoothing: float = 0.9
     div_annealing: Optional[DivAnnealing] = None
-    likelihood: Nll = Nll.Gaussian
+    likelihood: Likelihood = Likelihood.Gaussian
 
     def __post_init__(self):
         if self.call_every:

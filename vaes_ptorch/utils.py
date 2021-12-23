@@ -81,6 +81,26 @@ def rbf_kernel(left_samples: Tensor, right_samples: Tensor, bandwidth: float) ->
     return torch.mean(torch.exp(-0.5 * square_dists / bandwidth))
 
 
+def mmd_rbf(samples_p, samples_q, bandwidth: Optional[float] = None) -> Tensor:
+    """Computes and returns a finite-sample estimate of the Maximum Mean
+    Discrepancy (MMD) between two distributions P, Q from samples of P and Q
+    and using a RBF kernel.
+
+    If the bandwidth of the RBF is not specified, set it to dim / 2, where dim
+    is the dimension of the samples."""
+    assert samples_p.dim() == 2 and samples_q.dim() == 2
+    assert samples_q.size(1) == samples_q.size(1)
+
+    if bandwidth is None:
+        bandwidth = samples_p.size(1) / 2.0
+
+    kernel_p = rbf_kernel(samples_p, samples_p, bandwidth)
+    kernel_q = rbf_kernel(samples_q, samples_q, bandwidth)
+    kernel_pq = rbf_kernel(samples_p, samples_q, bandwidth)
+
+    return kernel_p + kernel_q - 2 * kernel_pq
+
+
 def show(img: torch.Tensor):
     """Small utility to plot a tensor of images"""
     img = img.detach()
