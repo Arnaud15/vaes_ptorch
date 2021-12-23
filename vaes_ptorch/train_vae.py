@@ -1,4 +1,5 @@
-from typing import Optional
+from collections import namedtuple
+from typing import Optional, Tuple
 
 import torch
 from torch.optim import Optimizer
@@ -9,6 +10,8 @@ from .losses import Divergence, Likelihood, elbo_loss
 from .utils import update_running
 from .vae import GaussianVAE
 
+Results = namedtuple("Results", ["train_ewma", "eval_ewma"])
+
 
 def train(
     train_data: DataLoader,
@@ -17,10 +20,11 @@ def train(
     args: TrainArgs,
     eval_data: Optional[DataLoader] = None,
     device: str = "cpu",
-):
+) -> Results:
     """Bare bones VAE training loop"""
     step = 0
-    smooth_loss = None
+    train_loss = None
+    eval_loss = None
     divergence = Divergence.MMD if args.info_vae else Divergence.KL
     for epoch_ix in range(args.num_epochs):
         vae.train()
@@ -38,14 +42,12 @@ def train(
             loss.backward()
             optimizer.step()
 
-            smooth_loss = update_running(smooth_loss, loss.item(), alpha=args.smoothing)
+            train_loss = update_running(train_loss, loss.item(), alpha=args.smoothing)
             if args.print_every and step % args.print_every == 0:
                 print(
-                    f"Step: {step} | Loss: {smooth_loss:.5f} | Div scale: {div_scale:.3f}"
+                    f"Step: {step} | Training loss: {train_loss:.5f} | Div scale: {div_scale:.3f}"
                 )
-                print(
-                    f"NLL({args.likelihood}): {elbo:.5f} | Divergence({divergence}): {div:.5f}"
-                )
+                print(f"{args.likelihood}: {elbo:.5f} | {divergence}: {div:.5f}")
 
             step += 1
 
@@ -55,9 +57,13 @@ def train(
             assert eval_data is not None
             eval_elbo = evaluate(eval_data, vae, args=args, device=device)
             print(f"ELBO at the end of epoch #{epoch_ix + 1} is {eval_elbo:.5f}")
+            eval_loss = update_running(eval_loss, eval_elbo, alpha=args.smoothing)
+    return Results(train_ewma=train_loss, eval_ewma=eval_loss)
 
 
-def evaluate(data: DataLoader, vae: GaussianVAE, args: TrainArgs, device: str = "cpu"):
+def evaluate(
+    data: DataLoader, vae: GaussianVAE, args: TrainArgs, device: str = "cpu"
+) -> float:
     """Evaluate the ELBO of a Gaussian VAE on unseen validation data."""
     step = 0
     total_loss = 0.0

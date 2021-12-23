@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Optional
 
 from .losses import Divergence, Likelihood
 
@@ -56,16 +56,12 @@ class TrainArgs:
     num_epochs: int
     info_vae: bool = False
     print_every: int = 0  # never print if zero
-    call_every: int = 0  # never use the callback if zero
-    callback: Optional[Callable] = None
     eval_every: int = 0
     smoothing: float = 0.9
     div_annealing: Optional[DivAnnealing] = None
     likelihood: Likelihood = Likelihood.Gaussian
 
     def __post_init__(self):
-        if self.call_every:
-            assert self.callback is not None
         if self.div_annealing is None:
             self.div_annealing = DivAnnealing(
                 start_scale=1.0, end_scale=1.0, start_epochs=0, linear_epochs=0
