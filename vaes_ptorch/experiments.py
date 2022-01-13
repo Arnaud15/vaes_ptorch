@@ -34,7 +34,7 @@ def mnist_main(args: argparse.Namespace):
             mnist_experiment(
                 exp_path=args.exp_path,
                 device=device,
-                info_vae=args.info_vae,
+                info_vae=args.info_vae[ix],
                 div_scale=args.div_scales[ix],
                 latent_dim=args.latent_dims[ix],
                 lr=args.lrs[ix],
@@ -49,7 +49,7 @@ def init_args(args: argparse.Namespace):
     1. If any of the arguments list is None, revert to the default value for
     this argument.
     2. Form all combination of argument lists to experiment over"""
-    assert args.info_vae in {0, 1}
+    assert all(x in {0, 1} for x in args.info_vae), args.info_vae
 
     for att in ["div_scales", "latent_dims", "lrs"]:
         vals = getattr(args, att)
@@ -60,10 +60,15 @@ def init_args(args: argparse.Namespace):
                 set(vals)
             )  # values to experiment with must be unique
 
-    num_experiments = len(args.div_scales) * len(args.latent_dims) * len(args.lrs)
+    num_experiments = (
+        len(args.div_scales)
+        * len(args.latent_dims)
+        * len(args.lrs)
+        * len(args.info_vae)
+    )
     print(f"{num_experiments} experiments to run on MNIST")
 
-    for att in ["div_scales", "latent_dims", "lrs"]:
+    for att in ["div_scales", "latent_dims", "lrs", "info_vae"]:
         setattr(
             args,
             att,
@@ -308,6 +313,7 @@ if __name__ == "__main__":
         type=int,
         required=True,
         help="1 for InfoVAE, 0 for [Vanilla|Beta]VAE",
+        nargs="+",
     )
     parser.add_argument(
         "--div_scales",

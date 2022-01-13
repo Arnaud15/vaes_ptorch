@@ -9,6 +9,10 @@ from torch import Tensor
 from torchvision.utils import make_grid  # type: ignore
 
 
+def gaussian_nll(obs: Tensor, mean: Tensor, var: Tensor, eps: float = 1e-6) -> Tensor:
+    return (obs - mean) ** 2 / (var + eps) + torch.log(var + eps)
+
+
 def sample_gaussian(mu: Tensor, var: Tensor, n_samples: int = 1) -> Tensor:
     """Draw samples from a multivariate gaussian distribution.
 
@@ -19,7 +23,9 @@ def sample_gaussian(mu: Tensor, var: Tensor, n_samples: int = 1) -> Tensor:
     if n_samples == 1:
         return mu + torch.sqrt(var) * torch.randn_like(mu)
     else:
-        return mu + torch.sqrt(var) * torch.randn(tuple([n_samples, *mu.size()]))
+        return mu + torch.sqrt(var) * torch.randn(
+            tuple([n_samples, *mu.size()]), device=mu.device
+        )
 
 
 def update_running(curr: Optional[float], obs: float, alpha: float) -> float:

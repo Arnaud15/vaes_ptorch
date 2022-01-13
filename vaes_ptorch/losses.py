@@ -1,13 +1,13 @@
 import enum
+import math
 from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch import Tensor
 
-from .utils import gaussian_kl, mmd_rbf, sample_gaussian
-from .vae import VaeOutput, GaussianVAE
+from .utils import gaussian_kl, gaussian_nll, mmd_rbf, sample_gaussian
+from .vae import GaussianVAE, VaeOutput
 
 
 class Likelihood(enum.Enum):
@@ -109,17 +109,19 @@ def nll_is(x: torch.Tensor, vae_nn: GaussianVAE, n_samples: int = 100) -> float:
     latent_dim = mu_z.size(-1)
     assert mu_z.shape == (bsize, latent_dim)
     assert sig_z.shape == (bsize, latent_dim)
+
     z_samples = sample_gaussian(mu_z, sig_z, n_samples=n_samples)
     assert z_samples.shape == (n_samples, bsize, latent_dim)
-    approx_posterior_nll = F.gaussian_nll_loss(
-        input=mu_z, target=z_samples, var=sig_z, reduction="none"
+
+    approx_posterior_nll = gaussian_nll(obs=z_samples, mean=mu_z, var=sig_z,).sum(-1)
+    if torch.any(torch.isinf(approx_posterior_nll)):
+        print("warning: infinite value in posterior")
+
+    prior_nll = gaussian_nll(
+        mean=torch.zeros_like(z_samples), obs=z_samples, var=torch.ones_like(z_samples),
     ).sum(-1)
-    prior_nll = F.gaussian_nll_loss(
-        input=torch.zeros_like(z_samples),
-        target=z_samples,
-        var=torch.ones_like(z_samples),
-        reduction="none",
-    ).sum(-1)
+    if torch.any(torch.isinf(prior_nll)):
+        print("warning: infinite value in prior")
 
     mu_x, sig_x = vae_nn.decoder(torch.flatten(z_samples, start_dim=0, end_dim=1))
     assert mu_x.size(0) == bsize * n_samples
@@ -127,19 +129,22 @@ def nll_is(x: torch.Tensor, vae_nn: GaussianVAE, n_samples: int = 100) -> float:
 
     mu_x = mu_x.reshape(n_samples, *x.size())
     sig_x = sig_x.reshape(n_samples, *x.size())
-    reconstruction_nll = F.gaussian_nll_loss(
-        input=mu_x, target=x, var=sig_x, reduction="none"
-    )
+    reconstruction_nll = gaussian_nll(mean=mu_x, obs=x, var=sig_x,)
     assert reconstruction_nll.shape[1:] == x.shape
     assert reconstruction_nll.shape[0] == n_samples
+
     reconstruction_nll = torch.flatten(reconstruction_nll, start_dim=2,).sum(-1)
-    print(
-        reconstruction_nll.size(), prior_nll.size(), approx_posterior_nll.size(),
-    )
-    return (
-        torch.log(
-            torch.exp(-prior_nll - reconstruction_nll + approx_posterior_nll).mean(0)
-        )
-        .mean()
-        .item()
-    )
+    if torch.any(torch.isinf(reconstruction_nll)):
+        print("warning: infinite value in reconstruction_nll")
+
+    log_likelihood_estimates = torch.logsumexp(
+        approx_posterior_nll - reconstruction_nll - prior_nll, dim=0, keepdim=False,
+    ) - math.log(n_samples)
+    assert log_likelihood_estimates.shape == (bsize,)
+
+    if torch.any(torch.isinf(log_likelihood_estimates)):
+        print("warning: infinite value in log likelihood estimates")
+
+        return 1e12
+    else:
+        return -log_likelihood_estimates.mean().item()

@@ -2,6 +2,7 @@
 
 import argparse
 import collections
+import copy
 import os
 import shutil
 from typing import Any, List
@@ -28,7 +29,7 @@ def test_repeat_list(input_list, num_repeats):
 
 def test_init_args_basic():
     none_args = {
-        "info_vae": 0,
+        "info_vae": [0,],
         "div_scales": None,
         "div_scale": 1,
         "latent_dims": None,
@@ -38,6 +39,7 @@ def test_init_args_basic():
     }
     in_args = argparse.Namespace(**none_args)
     out_args, num_experiments = exp.init_args(in_args)
+    assert out_args.info_vae == [0]
     assert out_args.div_scales == [1]
     assert out_args.latent_dims == [2]
     assert out_args.lrs == [3.0]
@@ -58,7 +60,7 @@ def counter_check(input_list: List[Any], repeated_list: List[Any], num_repeats: 
 def test_init_args(div_scales, latent_dims, lrs):
     in_args = argparse.Namespace(
         **{
-            "info_vae": 0,
+            "info_vae": [0, 1],
             "div_scales": list(div_scales),
             "div_scale": "a",
             "latent_dims": list(latent_dims),
@@ -67,8 +69,10 @@ def test_init_args(div_scales, latent_dims, lrs):
             "lr": "c",
         }
     )
-    out_args, num_experiments = exp.init_args(in_args)
-    assert num_experiments == len(div_scales) * len(latent_dims) * len(lrs)
+    out_args, num_experiments = exp.init_args(copy.deepcopy(in_args))
+    assert num_experiments == len(div_scales) * len(latent_dims) * len(lrs) * len(
+        in_args.info_vae
+    )
     counter_check(
         input_list=div_scales,
         repeated_list=out_args.div_scales,
@@ -83,6 +87,11 @@ def test_init_args(div_scales, latent_dims, lrs):
         input_list=lrs,
         repeated_list=out_args.lrs,
         num_repeats=num_experiments // len(lrs),
+    )
+    counter_check(
+        input_list=in_args.info_vae,
+        repeated_list=out_args.info_vae,
+        num_repeats=num_experiments // len(in_args.info_vae),
     )
 
 
@@ -127,7 +136,7 @@ def test_end_to_end():
     try:
         args = argparse.Namespace(
             **{
-                "info_vae": 0,
+                "info_vae": [0],
                 "div_scales": None,
                 "div_scale": 1.0,
                 "latent_dims": [20, 100],
@@ -148,7 +157,10 @@ def test_end_to_end():
         assert all(
             len(saved_items) == num_expected_experiments
             for saved_items in full_data.values()
-        ), ([len(vals) for vals in full_data.values()], num_expected_experiments)
+        ), (
+            [len(vals) for vals in full_data.values()],
+            num_expected_experiments,
+        )
     finally:
         # tear down temp directory
         shutil.rmtree(TEST_EXP_PATH)
