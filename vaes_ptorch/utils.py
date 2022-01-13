@@ -10,7 +10,7 @@ from torchvision.utils import make_grid  # type: ignore
 
 
 def gaussian_nll(obs: Tensor, mean: Tensor, var: Tensor, eps: float = 1e-6) -> Tensor:
-    return (obs - mean) ** 2 / (var + eps) + torch.log(var + eps)
+    return torch.pow(obs - mean, 2) / (var + eps) + torch.log(var + eps)
 
 
 def sample_gaussian(mu: Tensor, var: Tensor, n_samples: int = 1) -> Tensor:

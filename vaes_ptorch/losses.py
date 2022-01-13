@@ -102,9 +102,12 @@ def elbo_loss(
     return nll + div_scale * div, (nll.item(), div.item())
 
 
-def nll_is(x: torch.Tensor, vae_nn: GaussianVAE, n_samples: int = 100) -> float:
+def nll_is(x: torch.Tensor, vae_nn: GaussianVAE, n_samples: int = 500) -> float:
     """Estimate the negative log likelihood of a VAE on a batch of datapoints `x` using importance sampling."""
     bsize = x.size(0)
+    x_dims = x.shape[1:]
+    dims_prod = torch.prod(torch.tensor(list(x_dims))).item()
+    bit_per_dim_normalizer = math.log(2.0) * dims_prod
     mu_z, sig_z = vae_nn.encoder(x)
     latent_dim = mu_z.size(-1)
     assert mu_z.shape == (bsize, latent_dim)
@@ -127,13 +130,14 @@ def nll_is(x: torch.Tensor, vae_nn: GaussianVAE, n_samples: int = 100) -> float:
     assert mu_x.size(0) == bsize * n_samples
     assert sig_x.size(0) == bsize * n_samples
 
-    mu_x = mu_x.reshape(n_samples, *x.size())
-    sig_x = sig_x.reshape(n_samples, *x.size())
+    mu_x = mu_x.reshape(n_samples, bsize, *x_dims)
+    sig_x = sig_x.reshape(n_samples, bsize, *x_dims)
     reconstruction_nll = gaussian_nll(mean=mu_x, obs=x, var=sig_x,)
     assert reconstruction_nll.shape[1:] == x.shape
     assert reconstruction_nll.shape[0] == n_samples
 
     reconstruction_nll = torch.flatten(reconstruction_nll, start_dim=2,).sum(-1)
+    assert reconstruction_nll.shape == (n_samples, bsize)
     if torch.any(torch.isinf(reconstruction_nll)):
         print("warning: infinite value in reconstruction_nll")
 
@@ -145,6 +149,6 @@ def nll_is(x: torch.Tensor, vae_nn: GaussianVAE, n_samples: int = 100) -> float:
     if torch.any(torch.isinf(log_likelihood_estimates)):
         print("warning: infinite value in log likelihood estimates")
 
-        return 1e12
+        return float("inf")
     else:
-        return -log_likelihood_estimates.mean().item()
+        return -log_likelihood_estimates.mean().item() / bit_per_dim_normalizer
