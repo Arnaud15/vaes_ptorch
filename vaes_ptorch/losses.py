@@ -3,10 +3,11 @@ from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch import Tensor
 
-from .utils import gaussian_kl, mmd_rbf
-from .vae import VaeOutput
+from .utils import gaussian_kl, mmd_rbf, sample_gaussian
+from .vae import VaeOutput, GaussianVAE
 
 
 class Likelihood(enum.Enum):
@@ -99,3 +100,55 @@ def elbo_loss(
     assert not div.dim(), div.dim()
 
     return nll + div_scale * div, (nll.item(), div.item())
+
+
+def log_likelihood_is(x: torch.Tensor, vae_nn: GaussianVAE, n_samples: int = 100) -> float:
+    """Estimate the negative log likelihood of a VAE on a batch of datapoints `x` using importance sampling."""
+    bsize = x.size(0)
+    mu_z, sig_z = vae_nn.encoder(x)
+    latent_dim = mu_z.size(-1)
+    assert mu_z.shape == (bsize, latent_dim)
+    assert sig_z.shape == (bsize, latent_dim)
+    z_samples = sample_gaussian(mu_z, sig_z, n_samples=n_samples)
+    assert z_samples.shape == (n_samples, bsize, latent_dim)
+    approx_posterior_likelihood = torch.exp(
+        -F.gaussian_nll_loss(
+            input=mu_z, target=z_samples, var=sig_z, reduction="none"
+        )
+    ).sum(-1)
+    prior_likelihood = torch.exp(
+        -F.gaussian_nll_loss(
+            input=torch.zeros_like(z_samples),
+            target=z_samples,
+            var=torch.ones_like(z_samples),
+            reduction="none",
+        )
+    ).sum(-1)
+
+    mu_x, sig_x = vae_nn.decoder(torch.flatten(z_samples, start_dim=0, end_dim=1))
+    assert mu_x.size(0) == bsize * n_samples
+    assert sig_x.size(0) == bsize * n_samples
+
+    mu_x = mu_x.reshape(n_samples, *x.size())
+    sig_x = sig_x.reshape(n_samples, *x.size())
+    reconstruction_likelihood = torch.exp(
+        -F.gaussian_nll_loss(input=mu_x, target=x, var=sig_x, reduction="none")
+    )
+    assert reconstruction_likelihood.shape[1:] == x.shape
+    assert reconstruction_likelihood.shape[0] == n_samples
+    reconstruction_likelihood = torch.flatten(
+        reconstruction_likelihood, start_dim=2,
+    ).sum(-1)
+    print(
+        reconstruction_likelihood.size(),
+        prior_likelihood.size(),
+        approx_posterior_likelihood.size(),
+    )
+    sample_vals = torch.log(
+        (
+            prior_likelihood
+            * reconstruction_likelihood
+            / approx_posterior_likelihood
+        ).mean(0)
+    ).mean()
+    return sample_vals.item()

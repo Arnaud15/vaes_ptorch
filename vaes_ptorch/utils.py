@@ -9,13 +9,17 @@ from torch import Tensor
 from torchvision.utils import make_grid  # type: ignore
 
 
-def sample_gaussian(mu: Tensor, var: Tensor) -> Tensor:
+def sample_gaussian(mu: Tensor, var: Tensor, n_samples: int = 1) -> Tensor:
     """Draw samples from a multivariate gaussian distribution.
 
     Assumes independent components and hence a "flat" `var` parameter."""
     assert mu.size() == var.size(), (mu.size(), var.size())
+    assert n_samples > 0
 
-    return mu + torch.sqrt(var) * torch.randn_like(mu)
+    if n_samples == 1:
+        return mu + torch.sqrt(var) * torch.randn_like(mu)
+    else:
+        return mu + torch.sqrt(var) * torch.randn(tuple([n_samples, *mu.size()]))
 
 
 def update_running(curr: Optional[float], obs: float, alpha: float) -> float:
