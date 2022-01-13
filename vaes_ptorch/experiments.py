@@ -98,7 +98,7 @@ def mnist_experiment(
     latent_dim: int,
     lr: float,
     batch_size: int = 128,
-    num_epochs: int = 3,
+    num_epochs: int = 15,
     eval_share: float = 0.3,
     truncated_share: float = 0.0,
 ):
@@ -249,7 +249,7 @@ def build_mnist_args(
         info_vae=info_vae,
         num_epochs=num_epochs,
         div_annealing=vae_args.DivAnnealing(
-            start_epochs=1, linear_epochs=1, start_scale=0.0, end_scale=div_scale,
+            start_epochs=5, linear_epochs=5, start_scale=0.0, end_scale=div_scale,
         ),
         print_every=0,
         eval_every=1,
@@ -334,7 +334,7 @@ if __name__ == "__main__":
         "--latent_dim",
         type=int,
         required=False,
-        default=50,
+        default=10,
         help="Size of the VAE's latent space",
     )
     parser.add_argument(
