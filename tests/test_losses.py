@@ -39,7 +39,17 @@ def test_nll_is():
         )
         good_vae = vae_nns.GaussianVAE(encoder=smart_encoder, decoder=identity_decoder)
         bad_vae = vae_nns.GaussianVAE(encoder=dumb_encoder, decoder=identity_decoder)
-        good_nll = losses.nll_is(x=x_data, vae_nn=good_vae, n_samples=n_samples)
-        bad_nll = losses.nll_is(x=x_data, vae_nn=bad_vae, n_samples=n_samples)
+        good_nll = losses.nll_is(
+            x=x_data,
+            vae_nn=good_vae,
+            n_samples=n_samples,
+            nll_type=losses.Likelihood.Gaussian,
+        )
+        bad_nll = losses.nll_is(
+            x=x_data,
+            vae_nn=bad_vae,
+            n_samples=n_samples,
+            nll_type=losses.Likelihood.Gaussian,
+        )
         assert good_nll < bad_nll, (good_nll, bad_nll)
         print(good_nll, bad_nll)

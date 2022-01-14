@@ -71,7 +71,7 @@ def evaluate(
     with torch.no_grad():
         for x in data:
             x = x[0].to(device)
-            total_nll += nll_is(x, vae)
+            total_nll += nll_is(x, vae, nll_type=args.likelihood)
             step += 1
     eval_nll = total_nll / max(step, 1)
     return eval_nll

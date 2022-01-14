@@ -102,7 +102,9 @@ def elbo_loss(
     return nll + div_scale * div, (nll.item(), div.item())
 
 
-def nll_is(x: torch.Tensor, vae_nn: GaussianVAE, n_samples: int = 500) -> float:
+def nll_is(
+    x: torch.Tensor, vae_nn: GaussianVAE, nll_type: Likelihood, n_samples: int = 100,
+) -> float:
     """Estimate the negative log likelihood of a VAE on a batch of datapoints `x` using importance sampling."""
     bsize = x.size(0)
     x_dims = x.shape[1:]
@@ -132,7 +134,20 @@ def nll_is(x: torch.Tensor, vae_nn: GaussianVAE, n_samples: int = 500) -> float:
 
     mu_x = mu_x.reshape(n_samples, bsize, *x_dims)
     sig_x = sig_x.reshape(n_samples, bsize, *x_dims)
-    reconstruction_nll = gaussian_nll(mean=mu_x, obs=x, var=sig_x,)
+    if nll_type == Likelihood.Gaussian:
+        reconstruction_nll = gaussian_nll(mean=mu_x, obs=x, var=sig_x)
+    elif nll_type == Likelihood.Bernoulli:
+        x_target = torch.tile(x.unsqueeze(0), tuple([n_samples] + [1] * x.dim()))
+        assert x_target.shape[2:] == x_dims
+        assert x_target.size(0) == n_samples
+        assert x_target.size(1) == bsize
+        reconstruction_nll = nn.BCEWithLogitsLoss(reduction="none")(
+            mu_x, target=x_target
+        )
+    else:
+        raise ValueError(
+            f"incorrect negative log likelihood type, found {nll_type} but expected Gaussian or Bernoulli"
+        )
     assert reconstruction_nll.shape[1:] == x.shape
     assert reconstruction_nll.shape[0] == n_samples
 
