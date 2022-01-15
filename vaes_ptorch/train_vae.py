@@ -32,12 +32,8 @@ def train(
             div_scale = args.div_annealing.get_div_scale()  # type: ignore
             x = x[0].to(device)
             optimizer.zero_grad()
-            loss, (elbo, div) = elbo_loss(
-                x,
-                vae(x),
-                nll_type=args.likelihood,
-                div_type=divergence,
-                div_scale=div_scale,
+            loss, (elbo, div) = vae.compute_elbo(
+                x, div_type=divergence, div_scale=div_scale
             )
             loss.backward()
             optimizer.step()

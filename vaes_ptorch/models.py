@@ -4,6 +4,8 @@ from typing import List
 import torch
 import torch.nn as nn
 
+NormalParams = namedtuple("NormalParams", ["mu", "var",])
+
 
 class GaussianModel(nn.Module):
     def __init__(
@@ -26,7 +28,7 @@ class GaussianModel(nn.Module):
         mean, unnormalized_var = torch.split(
             out, split_size_or_sections=self.out_dim, dim=self.split_dim
         )
-        return mean, torch.exp(unnormalized_var) + self.min_var
+        return NormalParams(mu=mean, var=torch.exp(unnormalized_var) + self.min_var)
 
 
 def mlp_layer(in_dim: int, out_dim: int):

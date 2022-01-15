@@ -13,7 +13,6 @@ import torchvision
 import torchvision.transforms as T
 
 import vaes_ptorch.args as vae_args
-import vaes_ptorch.losses as losses
 import vaes_ptorch.models as models
 import vaes_ptorch.train_vae as train_vae
 import vaes_ptorch.vae as vaes
@@ -122,7 +121,7 @@ def mnist_experiment(
     train_d, eval_d, test_d = build_mnist_data(
         batch_size=batch_size, eval_share=eval_share, truncated_share=truncated_share,
     )
-    vae_nn = build_mnist_vae(latent_dim=latent_dim).to(device)
+    vae_nn = build_mnist_vae(latent_dim=latent_dim,).to(device)
     opt = torch.optim.Adam(params=vae_nn.parameters(), lr=lr)
     eval_err = train_vae.train(
         train_data=train_d,
@@ -240,7 +239,12 @@ def build_mnist_vae(
         out_dim=1,
         split_dim=1,
     )
-    vae_nn = vaes.GaussianVAE(encoder=encoder, decoder=decoder)
+    vae_nn = vaes.GaussianVAE(
+        encoder=encoder,
+        decoder=decoder,
+        latent_dim=latent_dim,
+        likelihood=vaes.Likelihood.Bernoulli,
+    )
     print("vae model initialized")
     return vae_nn
 
@@ -250,7 +254,7 @@ def build_mnist_args(
 ) -> vae_args.TrainArgs:
     """Initializes training arguments for the VAE experiment"""
     train_args = vae_args.TrainArgs(
-        likelihood=losses.Likelihood.Bernoulli,
+        likelihood=vaes.Likelihood.Bernoulli,
         info_vae=info_vae,
         num_epochs=num_epochs,
         div_annealing=vae_args.DivAnnealing(
