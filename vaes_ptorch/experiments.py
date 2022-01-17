@@ -1,21 +1,18 @@
 """MNIST experiments"""
 import argparse
-import collections
-import json
 import os
-import random
-from typing import Any, Dict, List, Tuple
+from typing import Tuple
 
 import torch
 import torch.nn as nn
 import torch.utils.data as tdata
 import torchvision
-import torchvision.transforms as T
 
 import vaes_ptorch.args as vae_args
 import vaes_ptorch.models as models
 import vaes_ptorch.proba as proba
 import vaes_ptorch.train_vae as train_vae
+import vaes_ptorch.utils as ut
 import vaes_ptorch.vae as vae_nn
 
 DATA_PATH = os.path.join(os.path.expanduser("~"), os.path.join("vaes_ptorch", "data"))
@@ -39,6 +36,8 @@ def mnist_main(args: argparse.Namespace):
                 latent_dim=args.latent_dims[ix],
                 lr=args.lrs[ix],
                 truncated_share=args.trunc_share,
+                batch_size=args.batch_size,
+                num_epochs=args.num_epochs,
             )
 
 
@@ -72,27 +71,14 @@ def init_args(args: argparse.Namespace):
         setattr(
             args,
             att,
-            repeat_list(getattr(args, att), num_experiments // len(getattr(args, att))),
+            ut.repeat_list(
+                getattr(args, att), num_experiments // len(getattr(args, att))
+            ),
         )
         len(getattr(args, att)) == num_experiments
 
     print(f"experiments starting with args: {args}")
     return args, num_experiments
-
-
-def repeat_list(input_list: List[Any], num_repeats: int) -> List[Any]:
-    """Create and return a new list formed from the repetition of an input list
-    for a specified number of times."""
-    assert num_repeats > 0, num_repeats
-    res = []
-    for _ in range(num_repeats):
-        res += input_list
-    assert len(res) == len(input_list) * num_repeats, (
-        len(res),
-        len(input_list),
-        num_repeats,
-    )
-    return res
 
 
 def mnist_experiment(
@@ -102,8 +88,8 @@ def mnist_experiment(
     div_scale: float,
     latent_dim: int,
     lr: float,
-    batch_size: int = 128,
-    num_epochs: int = 3,
+    batch_size: int,
+    num_epochs: int,
     eval_share: float = 0.3,
     truncated_share: float = 0.0,
 ):
@@ -133,7 +119,7 @@ def mnist_experiment(
         device=device,
     ).eval_ewma
     test_err = train_vae.evaluate(test_d, vae_net, train_args=train_args, device=device)
-    save_experiment(
+    ut.save_experiment(
         {
             "info_vae": info_vae,
             "div_scale": div_scale,
@@ -147,69 +133,6 @@ def mnist_experiment(
         },
         exp_path=exp_path,
     )
-
-
-def save_experiment(exp_data: Dict[str, Any], exp_path: str):
-    """Save experiments data in JSON format
-    - The JSON file name is a random integer
-    - The JSON file is saved in the folder specified by exp_path
-    """
-    check_exp_dir(exp_path)
-    filename = random_filename(exp_path)
-    filepath = os.path.join(exp_path, filename)
-    with open(filepath, "w") as exp_file:
-        json.dump(exp_data, exp_file)
-        print(f"saved experiments data {exp_data} at {filepath}")
-
-
-def random_filename(exp_path: str):
-    """Small utility to generate a random filename before saving an experiment,
-    dealing naively with collisions.
-
-    Assumes that fewer than 1_000_000_000 files are already saved in
-    `exp_path`."""
-    occupied_filenames = set(
-        name for name in os.listdir(exp_path) if name.endswith(".json")
-    )
-    filename = str(random.randint(0, 1_000_000_000)) + ".json"
-    while filename in occupied_filenames:
-        filename = str(random.randint(0, 1_000_000_000)) + ".json"
-    return filename
-
-
-def load_experiments_data(exp_path: str) -> Dict[str, List[Any]]:
-    """Load experiments data from the JSON files stored in the experiments folder"""
-    full_data = collections.defaultdict(list)
-    exp_filenames = [
-        string for string in os.listdir(exp_path) if string.endswith(".json")
-    ]
-    print(f"{len(exp_filenames)} experiment files to collate")
-    for filename in exp_filenames:
-        filepath = os.path.join(exp_path, filename)
-        with open(filepath, "r") as exp_file:
-            data = json.load(exp_file)
-            for key, value in data.items():
-                full_data[key].append(value)
-    return full_data
-
-
-def binarize(x):
-    """Useful torchvision transformation which converts grayscale pixel values
-    in [0, 1] to binary data in {0, 1}."""
-    tensor = T.ToTensor()(x)
-    mask = tensor > 0.5
-    tensor[mask] = 1.0
-    tensor[~mask] = 0.0
-    return tensor
-
-
-def check_exp_dir(exp_path: str):
-    """Create a directory if it does not already exist."""
-    if not os.path.isdir(exp_path):
-        print("creating experiments directory")
-        os.mkdir(exp_path)
-    else:
-        print("experiments directory already exists")
 
 
 def build_mnist_vae(
@@ -277,7 +200,7 @@ def build_mnist_data(
     parameterize independent bernoulli random variables."""
     assert truncated_share >= 0.0 and truncated_share < 1.0
     train_set = torchvision.datasets.MNIST(
-        root=DATA_PATH, train=True, download=True, transform=binarize,
+        root=DATA_PATH, train=True, download=True, transform=ut.binarize,
     )
     n = int(len(train_set) * (1.0 - truncated_share))
     train_set = tdata.Subset(train_set, list(range(n)))
@@ -292,7 +215,7 @@ def build_mnist_data(
         dataset=eval_data, batch_size=batch_size, shuffle=True
     )
     test_set = torchvision.datasets.MNIST(
-        root=DATA_PATH, train=False, download=True, transform=binarize,
+        root=DATA_PATH, train=False, download=True, transform=ut.binarize,
     )
     test_set = tdata.Subset(
         test_set, list(range(int(len(test_set) * (1.0 - truncated_share))))
@@ -366,5 +289,17 @@ if __name__ == "__main__":
         type=float,
         default=0.0,
         help="Optional share (in [0.0, 1.0)) of the MNIST dataset to be truncated away for faster experiments",
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=128,
+        help="Optional batch size parameter, defaults to 128",
+    )
+    parser.add_argument(
+        "--num_epochs",
+        type=int,
+        default=2,
+        help="Optional num epochs parameter, defaults to 2",
     )
     mnist_main(parser.parse_args())
