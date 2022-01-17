@@ -99,15 +99,16 @@ class GaussianVAE(nn.Module):
     def divergence_loss(
         self, z_params: proba.NormalParams, div_type: Divergence
     ) -> Tensor:
+        vanilla_kl = proba.gaussian_kl(
+            # variational posterior parameters
+            left_mu=z_params.mu,
+            left_var=z_params.var,
+            # prior distribution parameters
+            right_mu=torch.zeros_like(z_params.mu),
+            right_var=torch.ones_like(z_params.var),
+        )
         if div_type == Divergence.KL:
-            return proba.gaussian_kl(
-                # variational posterior parameters
-                left_mu=z_params.mu,
-                left_var=z_params.var,
-                # prior distribution parameters
-                right_mu=torch.zeros_like(z_params.mu),
-                right_var=torch.ones_like(z_params.var),
-            )
+            return vanilla_kl
         elif div_type == Divergence.MMD:
             # z samples from the variational posterior distribution
             # z ~ p_data(x) * q_{phi}(z | x)
@@ -116,9 +117,10 @@ class GaussianVAE(nn.Module):
             z_prior_samples = self.sample_prior(
                 n_samples=z_posterior_samples.size(0), device=z_posterior_samples.device
             )
-            return proba.mmd_rbf(
+            return vanilla_kl + 100.0 * proba.mmd_rbf(
                 samples_p=z_posterior_samples, samples_q=z_prior_samples,
             )
+
         else:
             raise ValueError(
                 f"unrecognized divergence type: {div_type}, expected [KL | MMD]"
