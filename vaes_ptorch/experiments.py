@@ -14,8 +14,9 @@ import torchvision.transforms as T
 
 import vaes_ptorch.args as vae_args
 import vaes_ptorch.models as models
+import vaes_ptorch.proba as proba
 import vaes_ptorch.train_vae as train_vae
-import vaes_ptorch.vae as vaes
+import vaes_ptorch.vae as vae_nn
 
 DATA_PATH = os.path.join(os.path.expanduser("~"), os.path.join("vaes_ptorch", "data"))
 
@@ -102,7 +103,7 @@ def mnist_experiment(
     latent_dim: int,
     lr: float,
     batch_size: int = 128,
-    num_epochs: int = 15,
+    num_epochs: int = 3,
     eval_share: float = 0.3,
     truncated_share: float = 0.0,
 ):
@@ -121,17 +122,17 @@ def mnist_experiment(
     train_d, eval_d, test_d = build_mnist_data(
         batch_size=batch_size, eval_share=eval_share, truncated_share=truncated_share,
     )
-    vae_nn = build_mnist_vae(latent_dim=latent_dim,).to(device)
-    opt = torch.optim.Adam(params=vae_nn.parameters(), lr=lr)
+    vae_net = build_mnist_vae(latent_dim=latent_dim,).to(device)
+    opt = torch.optim.Adam(params=vae_net.parameters(), lr=lr)
     eval_err = train_vae.train(
         train_data=train_d,
-        vae=vae_nn,
+        vae=vae_net,
         optimizer=opt,
-        args=train_args,
+        train_args=train_args,
         eval_data=eval_d,
         device=device,
     ).eval_ewma
-    test_err = train_vae.evaluate(test_d, vae_nn, args=train_args, device=device)
+    test_err = train_vae.evaluate(test_d, vae_net, train_args=train_args, device=device)
     save_experiment(
         {
             "info_vae": info_vae,
@@ -213,9 +214,9 @@ def check_exp_dir(exp_path: str):
 
 def build_mnist_vae(
     latent_dim: int, hidden_size: int = 512, num_hidden_layers: int = 3
-) -> vaes.GaussianVAE:
+) -> vae_nn.GaussianVAE:
     """Build a gaussian VAE where the encoder and decoder are simple MLPs."""
-    encoder = vaes.GaussianModel(
+    encoder = models.GaussianNN(
         model=nn.Sequential(
             nn.Flatten(),
             models.get_mlp(
@@ -227,26 +228,22 @@ def build_mnist_vae(
         out_dim=latent_dim,
         min_var=1e-10,
     )
-    decoder = vaes.GaussianModel(
-        model=nn.Sequential(
-            models.get_mlp(
-                in_dim=latent_dim,
-                out_dim=2 * 28 * 28,
-                h_dims=[hidden_size] * num_hidden_layers,
-            ),
-            nn.Unflatten(1, (2, 28, 28)),
+    decoder = nn.Sequential(
+        models.get_mlp(
+            in_dim=latent_dim,
+            out_dim=28 * 28,
+            h_dims=[hidden_size] * num_hidden_layers,
         ),
-        out_dim=1,
-        split_dim=1,
+        nn.Unflatten(1, (1, 28, 28)),
     )
-    vae_nn = vaes.GaussianVAE(
+    vae_net = vae_nn.GaussianVAE(
         encoder=encoder,
         decoder=decoder,
         latent_dim=latent_dim,
-        likelihood=vaes.Likelihood.Bernoulli,
+        stats_model=proba.BernoulliModel(),
     )
     print("vae model initialized")
-    return vae_nn
+    return vae_net
 
 
 def build_mnist_args(
@@ -254,7 +251,6 @@ def build_mnist_args(
 ) -> vae_args.TrainArgs:
     """Initializes training arguments for the VAE experiment"""
     train_args = vae_args.TrainArgs(
-        likelihood=vaes.Likelihood.Bernoulli,
         info_vae=info_vae,
         num_epochs=num_epochs,
         div_annealing=vae_args.DivAnnealing(

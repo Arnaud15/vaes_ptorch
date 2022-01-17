@@ -143,7 +143,7 @@ def test_end_to_end():
                 "latent_dim": 10,
                 "lrs": [1e-5, 1e-3, 1e-1],
                 "lr": 1e-3,
-                "num_repeats": 5,
+                "num_repeats": 2,
                 "exp_path": TEST_EXP_PATH,
                 "trunc_share": 0.99,
             }

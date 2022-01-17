@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from .losses import Divergence, Likelihood
+# Minimum variance for multivariate gaussian models, to avoid pathological
+# overfitting situations.
+MIN_VAR = 1e-10
 
 
 @dataclass
@@ -59,7 +61,6 @@ class TrainArgs:
     eval_every: int = 0
     smoothing: float = 0.9
     div_annealing: Optional[DivAnnealing] = None
-    likelihood: Likelihood = Likelihood.Gaussian
 
     def __post_init__(self):
         if self.div_annealing is None:

@@ -1,10 +1,21 @@
-from typing import Optional
+"""Utilities"""
+import math
+from typing import List, Optional
 
 import matplotlib.pyplot as plt  # type: ignore
 import numpy as np
+import torch
 import torchvision.transforms.functional as F  # type: ignore
 from torch import Tensor
 from torchvision.utils import make_grid  # type: ignore
+
+
+def bits_per_dim_multiplier(dims: List[int]) -> float:
+    """Computes the product of input dimensions x `log(2)` to rescale log
+    likelihood numbers to "bits per dimension" metrics."""
+    assert all(x > 0 for x in dims)
+    dims_prod = torch.prod(torch.tensor(dims)).item()
+    return math.log(2.0) * dims_prod
 
 
 def update_running(curr: Optional[float], obs: float, alpha: float) -> float:
