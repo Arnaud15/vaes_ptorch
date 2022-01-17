@@ -145,7 +145,8 @@ def build_mnist_vae(
             models.get_mlp(
                 in_dim=28 * 28,
                 out_dim=2 * latent_dim,
-                h_dims=[hidden_size] * num_hidden_layers,
+                h_dim=hidden_size,
+                n_hidden=num_hidden_layers,
             ),
         ),
         out_dim=latent_dim,
@@ -155,7 +156,8 @@ def build_mnist_vae(
         models.get_mlp(
             in_dim=latent_dim,
             out_dim=28 * 28,
-            h_dims=[hidden_size] * num_hidden_layers,
+            h_dim=hidden_size,
+            n_hidden=num_hidden_layers,
         ),
         nn.Unflatten(1, (1, 28, 28)),
     )
