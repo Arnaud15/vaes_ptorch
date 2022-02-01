@@ -19,8 +19,8 @@ class StatsModel(abc.ABC):
     @staticmethod
     @abc.abstractmethod
     def compute_nll(obs: Tensor, params: Any) -> Tensor:
-        """Computes the negative log likelihood of observations according to
-        the current statistical model."""
+        """Computes the negative log likelihood of observations according to the current statistical model."""
+
         pass
 
     @staticmethod

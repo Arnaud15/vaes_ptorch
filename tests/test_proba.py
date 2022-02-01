@@ -4,13 +4,14 @@ import hypothesis as hp
 import hypothesis.strategies as st
 import torch
 
-import vaes_ptorch.proba as proba
 import vaes_ptorch.args as args
+import vaes_ptorch.proba as proba
 
 dim_strategy = st.integers(min_value=2, max_value=100)
 
 pos_finite_floats = st.floats(min_value=1e-3, allow_nan=False, allow_infinity=False)
 finite_floats = st.floats(allow_nan=False, allow_infinity=False)
+
 
 @hp.given(dim_strategy, dim_strategy, dim_strategy, pos_finite_floats)
 def test_rbf_kernel(n_left, n_right, dim, bandwidth):
@@ -49,6 +50,8 @@ def test_mmd_rbf_deterministic_target(dim):
 
 
 large_dim_strategy = st.integers(min_value=50, max_value=100)
+
+
 @hp.given(large_dim_strategy)
 @hp.settings(max_examples=10)
 def test_mmd_rbf_gaussian_target(dim):
@@ -70,7 +73,6 @@ def test_mmd_rbf_gaussian_target(dim):
     ]
     divergences = [proba.mmd_rbf(target, candidate) for candidate in candidates]
     assert min(divergences) == divergences[-1]
-
 
 
 @hp.given(dim_strategy, dim_strategy)

@@ -178,12 +178,8 @@ def build_mnist_args(
     train_args = vae_args.TrainArgs(
         info_vae=info_vae,
         num_epochs=num_epochs,
-        div_annealing=vae_args.DivAnnealing(
-            start_epochs=5, linear_epochs=5, start_scale=0.0, end_scale=div_scale,
-        ),
-        print_every=0,
         eval_every=1,
-        smoothing=0.9,
+        target_div_scale=div_scale,
     )
     print(f"initialized training arguments to {train_args}")
     return train_args
