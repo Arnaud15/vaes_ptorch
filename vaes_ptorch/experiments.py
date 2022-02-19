@@ -10,7 +10,6 @@ import torchvision
 
 import vaes_ptorch.args as vae_args
 import vaes_ptorch.models as models
-import vaes_ptorch.proba as proba
 import vaes_ptorch.train_vae as train_vae
 import vaes_ptorch.utils as ut
 import vaes_ptorch.vae as vae_nn
@@ -108,17 +107,17 @@ def mnist_experiment(
     train_d, eval_d, test_d = build_mnist_data(
         batch_size=batch_size, eval_share=eval_share, truncated_share=truncated_share,
     )
-    vae_net = build_mnist_vae(latent_dim=latent_dim,).to(device)
+    vae_net = build_mnist_vae(latent_dim=latent_dim, device=device)
     opt = torch.optim.Adam(params=vae_net.parameters(), lr=lr)
-    eval_err = train_vae.train(
+    _, eval_info = train_vae.train(
         train_data=train_d,
         vae=vae_net,
         optimizer=opt,
         train_args=train_args,
         eval_data=eval_d,
         device=device,
-    ).eval_ewma
-    test_err = train_vae.evaluate(test_d, vae_net, train_args=train_args, device=device)
+    )
+    test_err = train_vae.evaluate(test_d, vae_net, device=device)
     ut.save_experiment(
         {
             "info_vae": info_vae,
@@ -128,29 +127,28 @@ def mnist_experiment(
             "batch_size": batch_size,
             "num_epochs": num_epochs,
             "eval_share": eval_share,
-            "eval_error": eval_err,
-            "test_error": test_err,
+            "eval_error": eval_info["nll"],
+            "test_error": test_err["nll"],
         },
         exp_path=exp_path,
     )
 
 
 def build_mnist_vae(
-    latent_dim: int, hidden_size: int = 512, num_hidden_layers: int = 3
+    latent_dim: int,
+    device: torch.device,
+    hidden_size: int = 512,
+    num_hidden_layers: int = 3,
 ) -> vae_nn.GaussianVAE:
     """Build a gaussian VAE where the encoder and decoder are simple MLPs."""
-    encoder = models.GaussianNN(
-        model=nn.Sequential(
-            nn.Flatten(),
-            models.get_mlp(
-                in_dim=28 * 28,
-                out_dim=2 * latent_dim,
-                h_dim=hidden_size,
-                n_hidden=num_hidden_layers,
-            ),
+    encoder = nn.Sequential(
+        nn.Flatten(),
+        models.get_mlp(
+            in_dim=28 * 28,
+            out_dim=2 * latent_dim,
+            h_dim=hidden_size,
+            n_hidden=num_hidden_layers,
         ),
-        out_dim=latent_dim,
-        min_var=1e-10,
     )
     decoder = nn.Sequential(
         models.get_mlp(
@@ -165,7 +163,9 @@ def build_mnist_vae(
         encoder=encoder,
         decoder=decoder,
         latent_dim=latent_dim,
-        stats_model=proba.BernoulliModel(),
+        obs_model=vae_nn.ObsModel.Bernoulli,
+        device=torch.device(device),
+        min_posterior_std=vae_args.MIN_STD,
     )
     print("vae model initialized")
     return vae_net

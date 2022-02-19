@@ -51,6 +51,7 @@ class LinearAnnealing:
         self.curr_step += 1
 
 
+@dataclass
 class SoftFreeBits:
     """Described in the appendix of https://arxiv.org/abs/1611.02731"""
 

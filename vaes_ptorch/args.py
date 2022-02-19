@@ -3,9 +3,9 @@ from typing import Optional
 
 import vaes_ptorch.annealing as annealing
 
-# Minimum variance for multivariate gaussian models, to avoid pathological
+# Minimum std for multivariate gaussian models, to avoid pathological
 # overfitting situations.
-MIN_VAR = 1e-10
+MIN_STD = 1e-10
 
 
 @dataclass

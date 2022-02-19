@@ -1,5 +1,4 @@
-from collections import namedtuple
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 import torch
 from torch.optim import Optimizer
@@ -9,8 +8,6 @@ import vaes_ptorch.args as args
 import vaes_ptorch.utils as ut
 import vaes_ptorch.vae as vae_nn
 
-Results = namedtuple("Results", ["train_ewma", "eval_ewma"])
-
 
 def train(
     train_data: DataLoader,
@@ -19,60 +16,57 @@ def train(
     train_args: args.TrainArgs,
     eval_data: Optional[DataLoader] = None,
     device: str = "cpu",
-) -> Results:
-    """Bare bones VAE training loop"""
-    step = 0
-    train_loss = None
-    eval_loss = None
+) -> Tuple[Dict[str, float], Dict[str, float]]:
+    """Training loop with periodic logging."""
+    step = 1
+    train_info = {}
+    eval_info = {}
     divergence = vae_nn.Divergence.MMD if train_args.info_vae else vae_nn.Divergence.KL
-    for epoch_ix in range(train_args.num_epochs):
-        vae.train()
+    for epoch_ix in range(1, train_args.num_epochs + 1):
         for x in train_data:
             div_scale = train_args.div_annealing.get_div_scale()  # type: ignore
-            x = x[0].to(device)
-            elbo = vae.compute_elbo(x, div_type=divergence, div_scale=div_scale)
+            (loss, loss_info) = vae.loss(
+                x.to(device), div_type=divergence, div_scale=div_scale
+            )
 
             optimizer.zero_grad()
-            elbo.loss.backward()
+            loss.backward()
             optimizer.step()
 
-            train_loss = ut.update_running(
-                train_loss, elbo.loss.item(), alpha=train_args.smoothing
-            )
+            ut.update_info_dict(train_info, loss_info)
             if train_args.print_every and step % train_args.print_every == 0:
-                print(
-                    f"Step: {step} | Training loss: {train_loss:.5f} | Div scale: {div_scale:.3f}"
-                )
-                print(f"NLL: {elbo.nll:.5f} | {divergence}: {elbo.div:.5f}")
+                print(f"Training logs for step: {step}, epoch: {epoch_ix}")
+                ut.print_info_dict(train_info)
+
+            if train_args.eval_every and step % train_args.eval_every == 0:
+                assert eval_data is not None
+                eval_results = evaluate(eval_data, vae, device=device)
+                vae.train()
+                ut.update_info_dict(eval_info, eval_results)
+                print(f"Validation logs for step: {step}, epoch: {epoch_ix}")
 
             step += 1
 
         train_args.div_annealing.step()  # type: ignore
-
-        if train_args.eval_every and epoch_ix % train_args.eval_every == 0:
-            assert eval_data is not None
-            eval_elbo = evaluate(eval_data, vae, train_args=train_args, device=device)
-            print(f"ELBO at the end of epoch #{epoch_ix + 1} is {eval_elbo:.5f}")
-            eval_loss = ut.update_running(
-                eval_loss, eval_elbo, alpha=train_args.smoothing
-            )
-    return Results(train_ewma=train_loss, eval_ewma=eval_loss)
+    return train_info, eval_info
 
 
 def evaluate(
-    data: DataLoader,
-    vae: vae_nn.GaussianVAE,
-    train_args: args.TrainArgs,
-    device: str = "cpu",
-) -> float:
-    """Evaluate the ELBO of a Gaussian VAE on data."""
+    eval_data: DataLoader, vae: vae_nn.GaussianVAE, device: str = "cpu",
+) -> Dict[str, float]:
+    """Evaluate the ELBO and estimated NLL of a Gaussian VAE on a dataset."""
     step = 0
     total_nll = 0.0
+    total_elbo = 0.0
     vae.eval()
     with torch.no_grad():
-        for x in data:
-            x = x[0].to(device)
+        for x in eval_data:
+            x = x.to(device)
             total_nll += vae.nll_is(x)
+            total_elbo += vae.loss(x, div_type=vae_nn.Divergence.KL, div_scale=1.0)[1][
+                "loss"
+            ]
             step += 1
     eval_nll = total_nll / max(step, 1)
-    return eval_nll
+    eval_elbo = total_elbo / max(step, 1)
+    return {"elbo": eval_elbo, "nll": eval_nll}
