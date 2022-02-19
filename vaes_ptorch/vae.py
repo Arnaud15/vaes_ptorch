@@ -52,12 +52,6 @@ class GaussianVAE(nn.Module):
         self.encoder = encoder
         self.decoder = decoder
 
-    def encode(self, x: Tensor) -> proba.NormalParams:
-        return self.encoder(x)
-
-    def decode(self, x: Tensor) -> Any:
-        return self.decoder(x)
-
     def sample_posterior(
         self, posterior_params: proba.NormalParams, n_samples: int = 1
     ) -> Tensor:
@@ -75,21 +69,10 @@ class GaussianVAE(nn.Module):
             n_samples=n_samples,
         )
 
-    def sample_obs(self, params: Any, n_samples: int) -> Tensor:
-        return self.stats_model.sample_obs(params=params, n_samples=n_samples)
-
-    def generate_x(self, n_samples: int, device: torch.device) -> Tensor:
-        assert (
-            n_samples > 0
-        ), f"found nonpositive number of samples to generate: {n_samples}"
-        prior_samples = self.sample_prior(n_samples, device)
-        x_params = self.decode(prior_samples)
-        return self.sample_obs(x_params, n_samples=1)
-
     def forward(self, x: Tensor) -> VaeOutput:
-        z_params = self.encode(x)
-        z_sample = self.sample_posterior(z_params)
-        x_params = self.decode(z_sample)
+        z_params = self.encoder(x)
+        z_sample = proba.sample_gaussian(z_params)
+        x_params = self.decoder(z_sample)
         return VaeOutput(z_params=z_params, z_sample=z_sample, x_params=x_params)
 
     def reconstruction_loss(self, x: Tensor, params: Any) -> Tensor:
@@ -202,7 +185,7 @@ class GaussianVAE(nn.Module):
         if torch.any(torch.isinf(prior_nll)):
             print("warning: infinite value in prior")
 
-        x_params = self.decode(torch.flatten(z_samples, start_dim=0, end_dim=1))
+        x_params = self.decoder(torch.flatten(z_samples, start_dim=0, end_dim=1))
         x_target = torch.tile(
             x.unsqueeze(0), tuple([n_samples] + [1] * x.dim())
         ).reshape(n_samples * bsize, *x_dims)

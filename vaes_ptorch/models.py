@@ -1,7 +1,4 @@
 """Neural network modules used in experiments."""
-from collections import namedtuple
-from typing import List
-
 import torch
 import torch.nn as nn
 
@@ -62,6 +59,7 @@ def get_mlp(in_dim: int, out_dim: int, h_dim: int, n_hidden: int) -> nn.Module:
     else:
         return nn.Sequential(
             nn.Linear(in_dim, h_dim),
+            nn.ReLU(),
             *[ResBlock(dim=h_dim) for _ in range(n_hidden)],
             nn.LayerNorm(h_dim),
             nn.Linear(h_dim, out_dim),
@@ -79,7 +77,7 @@ class ResBlock(nn.Module):
         self.lin = nn.Linear(dim, dim)
 
     def forward(self, x):
-        assert x.size(-1) == self.dim, (x.size(), dim)
+        assert x.size(-1) == self.dim, (x.size(), self.dim)
         res = x
         x = self.norm(x)
         x = self.lin(x)
