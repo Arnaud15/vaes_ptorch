@@ -5,7 +5,7 @@ This module implements functionality to anneal this term during VAE
 training."""
 
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, Optional
 
 
 class AnnealingSchedule(Protocol):
@@ -35,17 +35,15 @@ class LinearAnnealing:
         assert 0 <= self.zero_steps, self
         assert 0 <= self.linear_steps, self
         assert self.end_scale >= 0.0, self
-        self.curr_step = 0
+        self.curr_step = 1
 
     def get_scale(self, _info: Any) -> float:
-        return min(
-            self.end_scale,
-            max(
-                (self.curr_step - self.zero_steps)
-                * (self.end_scale / self.linear_steps),
-                0.0,
-            ),
-        )
+        if self.curr_step >= (self.zero_steps + self.linear_steps):
+            return self.end_scale
+        if self.curr_step <= self.zero_steps:
+            return 0.0
+        # curr_step > zero_steps and curr_step - zero_steps < linear_steps
+        return (self.curr_step - self.zero_steps) * self.end_scale / self.linear_steps
 
     def step(self):
         self.curr_step += 1
@@ -65,7 +63,9 @@ class SoftFreeBits:
         assert 0 < self.lambda_tol_pct < 100, self
         assert 0 < self.correction_pct < 100, self
 
-    def step(self, div_val: float):
+    def step(self, div_val: Optional[float]):
+        if div_val is None:
+            div_val = self.target_lambda
         if div_val > self.target_lambda * (1.0 + self.lambda_tol_pct / 100.0):
             # too much info in the posterior, increase the penalty
             self.scale *= 1.0 + self.correction_pct / 100.0

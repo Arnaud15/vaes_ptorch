@@ -8,6 +8,6 @@ setup(
     description="Simple VAE implementations in pytorch.",
     python_requires=">=3.6.2",
     packages=find_packages(),
-    install_requires=["torch"],
+    install_requires=["torch", "torchvision"],
     url="https://github.com/Arnaud15/vaes_ptorch",
 )

@@ -26,6 +26,18 @@ class ObsModel(enum.Enum):
 
     Bernoulli = enum.auto()
     Gaussian = enum.auto()
+    UnitGaussian = enum.auto()
+
+def to_gaussian_dist(params: Tensor, dim: int, min_std: float = args.MIN_STD) -> tdist.normal.Normal:
+    assert (
+        params.shape[-1] == 2 * dim
+    ), f"unexpected output dimension, expected: {dim * 2} for posterior mean + std, found: {params.shape}"
+    mean, log_std = torch.split(
+        params, split_size_or_sections=dim, dim=-1
+    )
+    return tdist.normal.Normal(
+        loc=mean, scale=torch.exp(0.5 * log_std) + min_std
+    )
 
 
 def params_to_dist(params: Any, obs_model: ObsModel) -> Distribution:
@@ -34,14 +46,12 @@ def params_to_dist(params: Any, obs_model: ObsModel) -> Distribution:
     if obs_model == ObsModel.Bernoulli:
         # expecting unnormalized logits in input
         return tdist.bernoulli.Bernoulli(logits=params)
+    elif obs_model == ObsModel.UnitGaussian:
+        # unit variance multivariate normal w/ indep components
+        return tdist.normal.Normal(loc=params, scale=1.0)
     elif obs_model == ObsModel.Gaussian:
-        if len(params) == 1:
-            # unit variance gaussian distribution
-            return tdist.normal.Normal(loc=params[0], scale=1.0)
-        else:
-            assert len(params) == 2
-            # multivariate normal with independent components
-            return tdist.normal.Normal(*params)
+        # multivariate normal w/ indep components and diag covariance
+        return to_gaussian_dist(params, params.shape[-1] // 2)
     else:
         raise NotImplementedError("unsupported obs model")
 
@@ -56,7 +66,6 @@ class GaussianVAE(nn.Module):
         latent_dim: int,
         obs_model: ObsModel,
         device: torch.device,
-        min_posterior_std: float = args.MIN_STD,
     ):
         super(GaussianVAE, self).__init__()
         assert latent_dim > 0, f"found nonpositive latent dim: {latent_dim}"
@@ -64,7 +73,6 @@ class GaussianVAE(nn.Module):
         self.obs_model = obs_model
         self.encoder = encoder
         self.decoder = decoder
-        self.min_std = min_posterior_std
         self.prior = tdist.normal.Normal(
             loc=torch.zeros(self.latent_dim, device=device),
             scale=torch.ones(self.latent_dim, device=device),
@@ -72,20 +80,12 @@ class GaussianVAE(nn.Module):
 
     def sample_prior(self, n_samples: int) -> Tensor:
         """Sample from the prior using the reparameterization trick"""
-        return self.prior.rsample(n_samples)
+        return self.prior.rsample((n_samples,))
 
     def encode(self, x: Tensor) -> tdist.normal.Normal:
         """Encode `x` to obtain the `q(z | x)` posterior distribution."""
         q_z_given_x_params = self.encoder(x)
-        assert (
-            q_z_given_x_params.shape[-1] == 2 * self.latent_dim
-        ), f"unexpected output dimension, expected: {self.latent_dim * 2} for posterior mean + std, found: {q_z_given_x_params.shape}"
-        mean, log_var = torch.split(
-            q_z_given_x_params, split_size_or_sections=self.latent_dim, dim=-1
-        )
-        return tdist.normal.Normal(
-            loc=mean, scale=torch.exp(0.5 * log_var) + self.min_std
-        )
+        return to_gaussian_dist(q_z_given_x_params, dim=self.latent_dim,)
 
     def decode(self, z: Tensor) -> Distribution:
         """Decode `z` to obtain the `p(x | z)` reconstruction distribution."""
@@ -100,7 +100,7 @@ class GaussianVAE(nn.Module):
         3. compute the reconstruction distribution given z"""
         q_z_given_x = self.encode(x)
         z_sample = q_z_given_x.rsample()
-        p_x_given_z = self.decoder(z_sample)
+        p_x_given_z = self.decode(z_sample)
         return (q_z_given_x, p_x_given_z)
 
     def divergence_loss(
@@ -111,7 +111,8 @@ class GaussianVAE(nn.Module):
         Supports both vanilla VAEs and MMD-VAEs."""
         if div_type == Divergence.KL:
             # vanilla VAE: KL divergence with the unit prior
-            return tdist.kl.kl_divergence(q_z_given_x, self.prior)
+            bsize = q_z_given_x.mean.shape[0]
+            return tdist.kl.kl_divergence(q_z_given_x, self.prior).sum() / bsize
         elif div_type == Divergence.MMD:
             # MMD VAE, compute MMD(q(z) | p(z))
             # z samples from the variational posterior distribution

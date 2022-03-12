@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader
 import vaes_ptorch.args as args
 import vaes_ptorch.utils as ut
 import vaes_ptorch.vae as vae_nn
+import vaes_ptorch.annealing as anl
 
 
 def train(
@@ -22,9 +23,11 @@ def train(
     train_info = {}
     eval_info = {}
     divergence = vae_nn.Divergence.MMD if train_args.info_vae else vae_nn.Divergence.KL
+    prev_div_value = None
+    div_annealing: anl.AnnealingSchedule = train_args.div_annealing # type: ignore
     for epoch_ix in range(1, train_args.num_epochs + 1):
         for x in train_data:
-            div_scale = train_args.div_annealing.get_div_scale()  # type: ignore
+            div_scale = div_annealing.get_scale(prev_div_value)
             (loss, loss_info) = vae.loss(
                 x.to(device), div_type=divergence, div_scale=div_scale
             )
@@ -33,6 +36,8 @@ def train(
             loss.backward()
             optimizer.step()
 
+            prev_div_value = loss_info["div"]
+            loss_info["div_scale"] = div_scale
             ut.update_info_dict(train_info, loss_info)
             if train_args.print_every and step % train_args.print_every == 0:
                 print(f"Training logs for step: {step}, epoch: {epoch_ix}")

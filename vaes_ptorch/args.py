@@ -1,11 +1,10 @@
 from dataclasses import dataclass
-from typing import Optional
 
-import vaes_ptorch.annealing as annealing
+import vaes_ptorch.annealing as anl
 
 # Minimum std for multivariate gaussian models, to avoid pathological
 # overfitting situations.
-MIN_STD = 1e-10
+MIN_STD = 1e-6
 
 
 @dataclass
@@ -23,7 +22,6 @@ class TrainArgs:
     soft_free_bits: bool = False
     zero_div_steps: int = 0
     lin_annealing_steps: int = 0
-    div_annealing: Optional[annealing.AnnealingSchedule] = None
 
     def __post_init__(self):
         assert self.num_epochs >= 0, self
@@ -34,11 +32,11 @@ class TrainArgs:
         assert self.zero_div_steps >= 0.0, self
         assert self.lin_annealing_steps >= 0.0, self
         if self.soft_free_bits:
-            self.div_annealing = annealing.SoftFreeBits(
+            self.div_annealing = anl.SoftFreeBits(
                 target_lambda=self.target_div_scale
             )
         else:
-            self.div_annealing = annealing.LinearAnnealing(
+            self.div_annealing = anl.LinearAnnealing(
                 end_scale=self.target_div_scale,
                 zero_steps=self.zero_div_steps,
                 linear_steps=self.lin_annealing_steps,
