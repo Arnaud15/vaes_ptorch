@@ -1,7 +1,7 @@
 """The Gaussian VAE class."""
 import enum
 import math
-from typing import Any, Dict, Tuple
+from typing import Dict, Tuple
 
 import torch
 import torch.distributions as tdist
@@ -9,63 +9,28 @@ import torch.nn as nn
 from torch import Tensor
 from torch.distributions.distribution import Distribution
 
-import vaes_ptorch.args as args
 import vaes_ptorch.proba as proba
 import vaes_ptorch.utils as ut
 
+# TODO -> move to einops
+
 
 class Divergence(enum.Enum):
-    """Divergence measures for use in the VAE loss"""
+    """Available divergence measures for use in the VAE loss."""
 
     KL = enum.auto()
     MMD = enum.auto()
 
 
-class ObsModel(enum.Enum):
-    """Supported observation models for VAEs"""
-
-    Bernoulli = enum.auto()
-    Gaussian = enum.auto()
-    UnitGaussian = enum.auto()
-
-def to_gaussian_dist(params: Tensor, dim: int, min_std: float = args.MIN_STD) -> tdist.normal.Normal:
-    assert (
-        params.shape[-1] == 2 * dim
-    ), f"unexpected output dimension, expected: {dim * 2} for posterior mean + std, found: {params.shape}"
-    mean, log_std = torch.split(
-        params, split_size_or_sections=dim, dim=-1
-    )
-    return tdist.normal.Normal(
-        loc=mean, scale=torch.exp(0.5 * log_std) + min_std
-    )
-
-
-def params_to_dist(params: Any, obs_model: ObsModel) -> Distribution:
-    """Map a supported VAE observation model and its parameters to the
-    corresponding torch Distribution object."""
-    if obs_model == ObsModel.Bernoulli:
-        # expecting unnormalized logits in input
-        return tdist.bernoulli.Bernoulli(logits=params)
-    elif obs_model == ObsModel.UnitGaussian:
-        # unit variance multivariate normal w/ indep components
-        return tdist.normal.Normal(loc=params, scale=1.0)
-    elif obs_model == ObsModel.Gaussian:
-        # multivariate normal w/ indep components and diag covariance
-        return to_gaussian_dist(params, params.shape[-1] // 2)
-    else:
-        raise NotImplementedError("unsupported obs model")
-
-
 class GaussianVAE(nn.Module):
-    """Gaussian VAE: a VAE with a unit multivariate gaussian prior."""
+    """Gaussian VAE: the classic VAE with a unit multivariate gaussian prior."""
 
     def __init__(
         self,
         encoder: nn.Module,
         decoder: nn.Module,
         latent_dim: int,
-        obs_model: ObsModel,
-        device: torch.device,
+        obs_model: proba.ObsModel = proba.ObsModel.UnitGaussian,
     ):
         super(GaussianVAE, self).__init__()
         assert latent_dim > 0, f"found nonpositive latent dim: {latent_dim}"
@@ -73,24 +38,24 @@ class GaussianVAE(nn.Module):
         self.obs_model = obs_model
         self.encoder = encoder
         self.decoder = decoder
-        self.prior = tdist.normal.Normal(
-            loc=torch.zeros(self.latent_dim, device=device),
-            scale=torch.ones(self.latent_dim, device=device),
-        )
+        self.prior = tdist.normal.Normal(loc=0.0, scale=1.0)
 
     def sample_prior(self, n_samples: int) -> Tensor:
         """Sample from the prior using the reparameterization trick"""
-        return self.prior.rsample((n_samples,))
+        return self.prior.rsample((n_samples, self.latent_dim))
 
     def encode(self, x: Tensor) -> tdist.normal.Normal:
         """Encode `x` to obtain the `q(z | x)` posterior distribution."""
         q_z_given_x_params = self.encoder(x)
-        return to_gaussian_dist(q_z_given_x_params, dim=self.latent_dim,)
+        return proba.to_gaussian_dist(
+            q_z_given_x_params,
+            dim=self.latent_dim,
+        )
 
     def decode(self, z: Tensor) -> Distribution:
         """Decode `z` to obtain the `p(x | z)` reconstruction distribution."""
         p_x_given_z_params = self.decoder(z)
-        return params_to_dist(p_x_given_z_params, obs_model=self.obs_model)
+        return proba.params_to_dist(p_x_given_z_params, obs_model=self.obs_model)
 
     def forward(self, x: Tensor) -> Tuple[tdist.normal.Normal, Distribution]:
         """Forward pass through a Gaussian VAE.
@@ -118,9 +83,13 @@ class GaussianVAE(nn.Module):
             # z samples from the variational posterior distribution
             z_posterior_samples = q_z_given_x.rsample()
             # z samples from the prior distribution
-            z_prior_samples = self.sample_prior(n_samples=z_posterior_samples.size(0))
+            device = z_posterior_samples.device
+            z_prior_samples = self.sample_prior(
+                n_samples=z_posterior_samples.size(0)
+            ).to(device)
             return proba.mmd_rbf(
-                samples_p=z_posterior_samples, samples_q=z_prior_samples,
+                samples_p=z_posterior_samples,
+                samples_q=z_prior_samples,
             )
         else:
             raise NotImplementedError(
@@ -148,7 +117,7 @@ class GaussianVAE(nn.Module):
         References:
         - original VAE paper: https://arxiv.org/abs/1312.6114.
         - beta-VAE paper: https://openreview.net/forum?id=Sy2fzU9gl
-        - InfoVAE paper: https://arxiv.org/abs/1706.02262 
+        - InfoVAE paper: https://arxiv.org/abs/1706.02262
         """
 
         assert div_scale >= 0.0
@@ -201,7 +170,9 @@ class GaussianVAE(nn.Module):
             print("warning: infinite value in reconstruction nll")
 
         log_likelihood_estimates = torch.logsumexp(
-            z_nll_q - reconstruction_nll - z_nll_prior, dim=0, keepdim=False,
+            z_nll_q - reconstruction_nll - z_nll_prior,
+            dim=0,
+            keepdim=False,
         ) - math.log(n_samples)
         assert log_likelihood_estimates.shape == (bsize,)
 
@@ -211,3 +182,85 @@ class GaussianVAE(nn.Module):
         return -log_likelihood_estimates.mean().item() / ut.bits_per_dim_multiplier(
             list(x_dims)
         )
+
+
+if __name__ == "__main__":
+    import numpy as np
+
+    import vaes_ptorch.models as models
+    import vaes_ptorch.plot as plot
+    import vaes_ptorch.utils as ut
+
+    # params
+    DSET_SIZE = 16384
+    DIM = 16
+
+    BATCH_SIZE = 64
+    LR = 1e-3
+    N_EPOCHS = 30
+
+    LATENT_DIM = 1
+    N_LAYERS = 5
+    H_DIM = 64
+
+    DIV_SCALE = 0.1
+    DIV_TYPE = Divergence.KL
+
+    # model and optimizer init
+    encoder = models.get_mlp(
+        in_dim=DIM, out_dim=2 * LATENT_DIM, h_dim=H_DIM, n_hidden=N_LAYERS
+    )
+    decoder = models.get_mlp(
+        in_dim=LATENT_DIM, out_dim=DIM, h_dim=H_DIM, n_hidden=N_LAYERS
+    )
+    net = GaussianVAE(
+        encoder=encoder,
+        decoder=decoder,
+        latent_dim=LATENT_DIM,
+    )
+    opt = torch.optim.Adam(net.parameters(), lr=LR)
+
+    # data generation
+    P = torch.zeros((2, DIM))
+    P[0, ::2] = 1
+    P[1, 1::2] = 1
+    data_x = torch.linspace(0, 2 * np.pi, 7)[:-1]
+    data_x = torch.stack((torch.cos(data_x), torch.sin(data_x)), dim=1)
+    data_x = data_x[None] + torch.randn((DSET_SIZE, data_x.shape[0], 2)) * 0.1
+    data_x = data_x.view(-1, 2)
+    plot.plot_points_series([data_x[i::6].numpy() for i in range(6)])
+
+    # VAE reconstruction training
+    net.train()
+    for epoch in range(N_EPOCHS):
+
+        info = {}
+
+        for _ in range(0, DSET_SIZE, BATCH_SIZE):
+            idx = torch.randint(data_x.shape[0], size=(BATCH_SIZE,))
+            batch = data_x[idx] @ P
+            loss, loss_info = net.loss(batch, div_type=DIV_TYPE, div_scale=DIV_SCALE)
+
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+
+            ut.update_info_dict(info, obs=loss_info)
+
+        print(f"Epoch {epoch + 1} | Info: {ut.print_info_dict(info)}.")
+
+    # Testing the reconstruction
+    net.eval()
+    with torch.no_grad():
+        series = []
+        for i in range(6):
+            full_batch = data_x[i::6] @ P
+            _, p_x_given_z = net(full_batch)
+            series.append(p_x_given_z.mean.numpy())
+        plot.plot_points_series(series)
+
+    # uniform sampling
+    with torch.no_grad():
+        prior_samples = net.sample_prior(DSET_SIZE)
+        x_samples = net.decode(prior_samples).mean.numpy()
+        plot.plot_points_series([x_samples])

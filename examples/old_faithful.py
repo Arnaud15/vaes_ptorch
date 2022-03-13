@@ -30,10 +30,11 @@ def save_data(path: str, eruptions: np.ndarray, waits: np.ndarray):
 
 
 def get_old_faithful_data(
-    save: bool, save_dir: Optional[str] = None,
+    save: bool,
+    save_dir: Optional[str] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Get old faithful data and return it
-    
+
     If a save directory is specified, attempt to read old faithful data previously stored in this directory
     If save is True, a save directory must be specified and the retrieved data will be stored in csv format in that directory.
     """

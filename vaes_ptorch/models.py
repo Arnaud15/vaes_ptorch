@@ -1,13 +1,14 @@
 """Neural network modules used in experiments."""
 from typing import Tuple
+
+import einops as ei
 import torch
 import torch.nn as nn
 from torch import Tensor
-import einops as ei
 
 
 def get_mlp(in_dim: int, out_dim: int, h_dim: int, n_hidden: int) -> nn.Module:
-    """Build a Multi Layer Perceptron (MLP) with residual connections, ReLU
+    """Build a Multi Layer Perceptron (MLP) with residual connections, switch
     activations, Layer Normalization and a fixed hidden size."""
     assert n_hidden >= 0, n_hidden
     if not n_hidden:
@@ -15,7 +16,7 @@ def get_mlp(in_dim: int, out_dim: int, h_dim: int, n_hidden: int) -> nn.Module:
     else:
         return nn.Sequential(
             nn.Linear(in_dim, h_dim),
-            nn.ReLU(),
+            nn.SiLU(),
             *[ResBlock(dim=h_dim) for _ in range(n_hidden)],
             nn.LayerNorm(h_dim),
             nn.Linear(h_dim, out_dim),
@@ -23,7 +24,7 @@ def get_mlp(in_dim: int, out_dim: int, h_dim: int, n_hidden: int) -> nn.Module:
 
 
 class ResBlock(nn.Module):
-    """Fully Connected residual block with Layer Norm and ReLU activation."""
+    """Fully Connected residual block with Layer Norm and switch activation."""
 
     def __init__(self, dim: int):
         super(ResBlock, self).__init__()
@@ -31,13 +32,14 @@ class ResBlock(nn.Module):
         self.dim = dim
         self.norm = nn.LayerNorm(dim)
         self.lin = nn.Linear(dim, dim)
+        self.act = nn.SiLU()
 
     def forward(self, x: Tensor) -> Tensor:
         assert x.size(-1) == self.dim, (x.size(), self.dim)
         res = x
         x = self.norm(x)
         x = self.lin(x)
-        x = nn.ReLU()(x)
+        x = self.act(x)
         return x + res
 
 
@@ -88,3 +90,29 @@ class VectorQuantizer1D(nn.Module):
         return ei.rearrange(
             quantized, "(n l) d -> n l d", n=n_samples, l=seq_len, d=self.dim
         )
+
+
+class SeqModel(nn.Module):
+    """Simple 1D autoregressive model made up of a GRU and a linear projection
+    head"""
+
+    def __init__(self, input_size: int, hidden_size: int, codebook_size: int):
+        super().__init__()
+        self.gru = nn.GRU(
+            input_size=input_size,
+            hidden_size=hidden_size,
+            num_layers=1,
+            bias=True,
+            batch_first=True,
+        )
+        self.proj_head = nn.Linear(hidden_size, codebook_size)
+        self.dim = hidden_size
+
+    def forward(self, x: Tensor) -> Tensor:
+        h_states, _ = self.gru(x)
+        h_0 = torch.zeros(x.size(0), 1, self.dim)
+        prev_h_states = torch.cat([h_0, h_states[:, :-1, :]], dim=1)
+        assert h_states.shape == prev_h_states.shape
+        return self.proj_head(
+            prev_h_states
+        )  # concatenate a 0 at the beginning and ignore the last hidden state

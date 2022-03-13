@@ -98,14 +98,16 @@ def mnist_experiment(
     2. get the MNIST train, validation and test data
     3. initialize the VAE model and optimizer
     4. train the VAE and measure its reconstruction loss on the validation set
-    5. test the VAE and measure its reconstruction loss on the test set 
+    5. test the VAE and measure its reconstruction loss on the test set
     6. save results and experiment arguments in a file
     """
     train_args = build_mnist_args(
         info_vae=info_vae, div_scale=div_scale, num_epochs=num_epochs
     )
     train_d, eval_d, test_d = build_mnist_data(
-        batch_size=batch_size, eval_share=eval_share, truncated_share=truncated_share,
+        batch_size=batch_size,
+        eval_share=eval_share,
+        truncated_share=truncated_share,
     )
     vae_net = build_mnist_vae(latent_dim=latent_dim, device=device)
     opt = torch.optim.Adam(params=vae_net.parameters(), lr=lr)
@@ -186,7 +188,9 @@ def build_mnist_args(
 
 
 def build_mnist_data(
-    batch_size: int, eval_share: float, truncated_share: float = 0.0,
+    batch_size: int,
+    eval_share: float,
+    truncated_share: float = 0.0,
 ) -> Tuple[tdata.DataLoader, tdata.DataLoader, tdata.DataLoader]:
     """Extract a training, validation and test set for MNIST
 
@@ -198,13 +202,18 @@ def build_mnist_data(
     parameterize independent bernoulli random variables."""
     assert truncated_share >= 0.0 and truncated_share < 1.0
     train_set = torchvision.datasets.MNIST(
-        root=DATA_PATH, train=True, download=True, transform=ut.binarize,
+        root=DATA_PATH,
+        train=True,
+        download=True,
+        transform=ut.binarize,
     )
     n = int(len(train_set) * (1.0 - truncated_share))
     train_set = tdata.Subset(train_set, list(range(n)))
     n_eval = int(n * eval_share)
     train_data, eval_data = tdata.random_split(
-        train_set, [n - n_eval, n_eval], generator=torch.Generator().manual_seed(15),
+        train_set,
+        [n - n_eval, n_eval],
+        generator=torch.Generator().manual_seed(15),
     )
     train_loader = tdata.DataLoader(
         dataset=train_data, batch_size=batch_size, shuffle=True
@@ -213,7 +222,10 @@ def build_mnist_data(
         dataset=eval_data, batch_size=batch_size, shuffle=True
     )
     test_set = torchvision.datasets.MNIST(
-        root=DATA_PATH, train=False, download=True, transform=ut.binarize,
+        root=DATA_PATH,
+        train=False,
+        download=True,
+        transform=ut.binarize,
     )
     test_set = tdata.Subset(
         test_set, list(range(int(len(test_set) * (1.0 - truncated_share))))
@@ -265,10 +277,18 @@ if __name__ == "__main__":
         help="Size of the VAE's latent space",
     )
     parser.add_argument(
-        "--lrs", type=float, required=False, help="Learning rates", nargs="+",
+        "--lrs",
+        type=float,
+        required=False,
+        help="Learning rates",
+        nargs="+",
     )
     parser.add_argument(
-        "--lr", type=float, required=False, default=1e-3, help="Learning rate",
+        "--lr",
+        type=float,
+        required=False,
+        default=1e-3,
+        help="Learning rate",
     )
     parser.add_argument(
         "--num_repeats",

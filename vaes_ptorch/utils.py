@@ -103,7 +103,7 @@ def bits_per_dim_multiplier(dims: List[int]) -> float:
 
 def update_running(curr: Optional[float], obs: float, alpha: float = 0.9) -> float:
     """Update an exponentially weighted moving average with a new observation.
-    
+
     If the current value of the moving average has not been initialized already
     it is `None` and set equal to the new observation."""
 
@@ -122,9 +122,9 @@ def update_info_dict(info_dict: Dict[str, float], obs: Dict[str, float]):
         info_dict[key] = updated_val
 
 
-def print_info_dict(info_dict: Dict[str, float]):
+def print_info_dict(info_dict: Dict[str, float]) -> str:
     """Formats and prints the float values held in a dictionary."""
-    print(" | ".join([f"{key}: {value:.5f}" for (key, value) in info_dict.items()]))
+    return " | ".join([f"{key}: {value:.5f}" for (key, value) in info_dict.items()])
 
 
 def show(img: Tensor):

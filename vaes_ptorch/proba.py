@@ -1,8 +1,47 @@
-"""Functions implementing common probability operations."""
-from typing import Optional
+"""Utilities around probability distributions and operations."""
+import enum
+from typing import Any, Optional
 
 import torch
+import torch.distributions as tdist
 from torch import Tensor
+from torch.distributions.distribution import Distribution
+
+import vaes_ptorch.args as args
+
+
+class ObsModel(enum.Enum):
+    """Supported observation models for VAEs"""
+
+    Bernoulli = enum.auto()
+    Gaussian = enum.auto()
+    UnitGaussian = enum.auto()
+
+
+def to_gaussian_dist(
+    params: Tensor, dim: int, min_std: float = args.MIN_STD
+) -> tdist.normal.Normal:
+    assert (
+        params.shape[-1] == 2 * dim
+    ), f"unexpected output dimension, expected: {dim * 2} for posterior mean + std, found: {params.shape}"
+    mean, log_std = torch.split(params, split_size_or_sections=dim, dim=-1)
+    return tdist.normal.Normal(loc=mean, scale=torch.exp(0.5 * log_std) + min_std)
+
+
+def params_to_dist(params: Any, obs_model: ObsModel) -> Distribution:
+    """Map a supported VAE observation model and its parameters to the
+    corresponding torch Distribution object."""
+    if obs_model == ObsModel.Bernoulli:
+        # expecting unnormalized logits in input
+        return tdist.bernoulli.Bernoulli(logits=params)
+    elif obs_model == ObsModel.UnitGaussian:
+        # unit variance multivariate normal w/ indep components
+        return tdist.normal.Normal(loc=params, scale=1.0)
+    elif obs_model == ObsModel.Gaussian:
+        # multivariate normal w/ indep components and diag covariance
+        return to_gaussian_dist(params, params.shape[-1] // 2)
+    else:
+        raise NotImplementedError("unsupported obs model")
 
 
 def rbf_kernel(left_samples: Tensor, right_samples: Tensor, bandwidth: float) -> Tensor:

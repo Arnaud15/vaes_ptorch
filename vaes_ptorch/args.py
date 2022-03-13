@@ -32,9 +32,7 @@ class TrainArgs:
         assert self.zero_div_steps >= 0.0, self
         assert self.lin_annealing_steps >= 0.0, self
         if self.soft_free_bits:
-            self.div_annealing = anl.SoftFreeBits(
-                target_lambda=self.target_div_scale
-            )
+            self.div_annealing = anl.SoftFreeBits(target_lambda=self.target_div_scale)
         else:
             self.div_annealing = anl.LinearAnnealing(
                 end_scale=self.target_div_scale,

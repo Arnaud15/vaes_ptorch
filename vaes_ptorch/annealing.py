@@ -5,7 +5,7 @@ This module implements functionality to anneal this term during VAE
 training."""
 
 from dataclasses import dataclass
-from typing import Any, Protocol, Optional
+from typing import Any, Optional, Protocol
 
 
 class AnnealingSchedule(Protocol):
