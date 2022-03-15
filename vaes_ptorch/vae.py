@@ -197,26 +197,27 @@ if __name__ == "__main__":
 
     BATCH_SIZE = 64
     LR = 1e-3
-    N_EPOCHS = 30
+    N_EPOCHS = 10
 
     LATENT_DIM = 1
     N_LAYERS = 5
-    H_DIM = 64
+    H_DIM = 32
 
-    DIV_SCALE = 0.1
-    DIV_TYPE = Divergence.KL
+    DIV_SCALE = 20.0
+    DIV_TYPE = Divergence.MMD
 
     # model and optimizer init
     encoder = models.get_mlp(
         in_dim=DIM, out_dim=2 * LATENT_DIM, h_dim=H_DIM, n_hidden=N_LAYERS
     )
     decoder = models.get_mlp(
-        in_dim=LATENT_DIM, out_dim=DIM, h_dim=H_DIM, n_hidden=N_LAYERS
+        in_dim=LATENT_DIM, out_dim=2 * DIM, h_dim=H_DIM, n_hidden=N_LAYERS
     )
     net = GaussianVAE(
         encoder=encoder,
         decoder=decoder,
         latent_dim=LATENT_DIM,
+        obs_model=proba.ObsModel.Gaussian,
     )
     opt = torch.optim.Adam(net.parameters(), lr=LR)
 
@@ -256,11 +257,11 @@ if __name__ == "__main__":
         for i in range(6):
             full_batch = data_x[i::6] @ P
             _, p_x_given_z = net(full_batch)
-            series.append(p_x_given_z.mean.numpy())
+            series.append(p_x_given_z.sample().numpy())
         plot.plot_points_series(series)
 
     # uniform sampling
     with torch.no_grad():
         prior_samples = net.sample_prior(DSET_SIZE)
-        x_samples = net.decode(prior_samples).mean.numpy()
+        x_samples = net.decode(prior_samples).sample().numpy()
         plot.plot_points_series([x_samples])
