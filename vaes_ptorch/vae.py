@@ -42,7 +42,7 @@ class GaussianVAE(nn.Module):
 
     def sample_prior(self, n_samples: int) -> Tensor:
         """Sample from the prior using the reparameterization trick"""
-        return self.prior.rsample((n_samples, self.latent_dim))
+        return self.prior.sample((n_samples, self.latent_dim))
 
     def encode(self, x: Tensor) -> tdist.normal.Normal:
         """Encode `x` to obtain the `q(z | x)` posterior distribution."""
@@ -97,7 +97,7 @@ class GaussianVAE(nn.Module):
             )
 
     def loss(
-        self, x: Tensor, div_type: Divergence, div_scale: float = 1.0
+        self, x: Tensor, p_x_given_z: Distribution, q_z_given_x: tdist.normal.Normal, div_type: Divergence, div_scale: float = 1.0
     ) -> Tuple[Tensor, Dict[str, float]]:
         """Computes the ELBO (Evidence Lower Bound) loss for a Gaussian VAE.
 
@@ -123,10 +123,11 @@ class GaussianVAE(nn.Module):
         assert div_scale >= 0.0
         # assume that the first dimension is the batch0.0
         batch_size = x.size(0)
-        assert x.dim() > 1
-        q_z_given_x, p_x_given_z = self.forward(x)
         reconstruction_term = -p_x_given_z.log_prob(x).sum() / batch_size
-        div_term = self.divergence_loss(q_z_given_x, div_type=div_type)
+        if div_scale > 0.0:
+            div_term = self.divergence_loss(q_z_given_x, div_type=div_type)
+        else:
+            div_term = torch.zeros_like(reconstruction_term)
         loss = reconstruction_term + div_scale * div_term
         return (
             loss,
@@ -134,6 +135,7 @@ class GaussianVAE(nn.Module):
                 "loss": loss.item(),
                 "nll": reconstruction_term.item(),
                 "div": div_term.item(),
+                "div_scale": div_scale,
             },
         )
 
@@ -189,6 +191,7 @@ if __name__ == "__main__":
 
     import vaes_ptorch.models as models
     import vaes_ptorch.plot as plot
+    import vaes_ptorch.annealing as annealing
     import vaes_ptorch.utils as ut
 
     # params
@@ -199,12 +202,16 @@ if __name__ == "__main__":
     LR = 1e-3
     N_EPOCHS = 10
 
-    LATENT_DIM = 1
+    LATENT_DIM = 2
     N_LAYERS = 5
     H_DIM = 32
 
-    DIV_SCALE = 20.0
-    DIV_TYPE = Divergence.MMD
+    # first pick a div: KL or MMD
+    # then pick a target lambda:
+    # - increase it to prioritize better reconstruction,
+    # - lower it to improve inference (hard to make work here, though)
+    DIV_TYPE = Divergence.KL
+    TARGET_LAMBDA = 0.15  # 0.15 for KL, 0.025 for MMD, bad inference still
 
     # model and optimizer init
     encoder = models.get_mlp(
@@ -232,6 +239,7 @@ if __name__ == "__main__":
     plot.plot_points_series([data_x[i::6].numpy() for i in range(6)])
 
     # VAE reconstruction training
+    scale_manager = annealing.SoftFreeBits(target_lambda=TARGET_LAMBDA)
     net.train()
     for epoch in range(N_EPOCHS):
 
@@ -240,11 +248,13 @@ if __name__ == "__main__":
         for _ in range(0, DSET_SIZE, BATCH_SIZE):
             idx = torch.randint(data_x.shape[0], size=(BATCH_SIZE,))
             batch = data_x[idx] @ P
-            loss, loss_info = net.loss(batch, div_type=DIV_TYPE, div_scale=DIV_SCALE)
+            q_z_given_x, p_x_given_z = net(batch)
+            loss, loss_info = net.loss(batch, p_x_given_z=p_x_given_z, q_z_given_x=q_z_given_x, div_type=DIV_TYPE, div_scale=scale_manager.get_scale())
 
             opt.zero_grad()
             loss.backward()
             opt.step()
+            scale_manager.step(loss_info["div"])
 
             ut.update_info_dict(info, obs=loss_info)
 
@@ -258,10 +268,13 @@ if __name__ == "__main__":
             full_batch = data_x[i::6] @ P
             _, p_x_given_z = net(full_batch)
             series.append(p_x_given_z.sample().numpy())
+            series.append(p_x_given_z.mean.numpy())
         plot.plot_points_series(series)
 
     # uniform sampling
     with torch.no_grad():
         prior_samples = net.sample_prior(DSET_SIZE)
-        x_samples = net.decode(prior_samples).sample().numpy()
-        plot.plot_points_series([x_samples])
+        p_x_given_z = net.decode(prior_samples) 
+        x_samples = p_x_given_z.sample().numpy()
+        x_mean = p_x_given_z.mean.numpy()
+        plot.plot_points_series([x_samples, x_mean])
