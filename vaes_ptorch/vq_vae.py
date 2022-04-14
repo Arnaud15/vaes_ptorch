@@ -26,8 +26,7 @@ class VQVAE(nn.Module):
         self.encoder = encoder
         self.decoder = decoder
         self.vector_quantizer = models.VectorQuantizer1D(
-            codebook_size=codebook_size,
-            dim=latent_dim,
+            codebook_size=codebook_size, dim=latent_dim,
         )
         self.latent_dim = latent_dim
         self.seq_len = seq_len
@@ -66,11 +65,14 @@ class VQVAE(nn.Module):
 
         loss = rec_mse + e_latent_loss + commitment_weight * q_latent_loss
 
-        return loss, {
-            "rec_mse": rec_mse.item(),
-            "e_latent_loss": e_latent_loss.item(),
-            "q_latent_loss": q_latent_loss.item(),
-        }
+        return (
+            loss,
+            {
+                "rec_mse": rec_mse.item(),
+                "e_latent_loss": e_latent_loss.item(),
+                "q_latent_loss": q_latent_loss.item(),
+            },
+        )
 
     def sample_autoregressive(
         self, seq_model: models.SeqModel, n_samples: int, hidden_dim: int, seq_len: int
@@ -209,10 +211,7 @@ if __name__ == "__main__":
             loss.backward()
             opt.step()
 
-            tot_loss = ut.update_running(
-                tot_loss,
-                loss.item(),
-            )
+            tot_loss = ut.update_running(tot_loss, loss.item(),)
 
         print(f"Epoch {epoch + 1} | Loss {tot_loss:.5f}")
 

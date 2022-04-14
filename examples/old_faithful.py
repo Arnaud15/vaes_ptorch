@@ -30,8 +30,7 @@ def save_data(path: str, eruptions: np.ndarray, waits: np.ndarray):
 
 
 def get_old_faithful_data(
-    save: bool,
-    save_dir: Optional[str] = None,
+    save: bool, save_dir: Optional[str] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Get old faithful data and return it
 

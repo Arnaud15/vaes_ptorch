@@ -49,13 +49,7 @@ def test_nll_is():
             stats_model=proba.GaussianModel(),
             latent_dim=dim,
         )
-        good_nll = good_vae.nll_is(
-            x=x_data,
-            n_samples=n_samples,
-        )
-        bad_nll = bad_vae.nll_is(
-            x=x_data,
-            n_samples=n_samples,
-        )
+        good_nll = good_vae.nll_is(x=x_data, n_samples=n_samples,)
+        bad_nll = bad_vae.nll_is(x=x_data, n_samples=n_samples,)
         assert good_nll < bad_nll, (good_nll, bad_nll)
         print(good_nll, bad_nll)

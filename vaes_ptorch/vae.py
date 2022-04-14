@@ -47,10 +47,7 @@ class GaussianVAE(nn.Module):
     def encode(self, x: Tensor) -> tdist.normal.Normal:
         """Encode `x` to obtain the `q(z | x)` posterior distribution."""
         q_z_given_x_params = self.encoder(x)
-        return proba.to_gaussian_dist(
-            q_z_given_x_params,
-            dim=self.latent_dim,
-        )
+        return proba.to_gaussian_dist(q_z_given_x_params, dim=self.latent_dim,)
 
     def decode(self, z: Tensor) -> Distribution:
         """Decode `z` to obtain the `p(x | z)` reconstruction distribution."""
@@ -88,8 +85,7 @@ class GaussianVAE(nn.Module):
                 n_samples=z_posterior_samples.size(0)
             ).to(device)
             return proba.mmd_rbf(
-                samples_p=z_posterior_samples,
-                samples_q=z_prior_samples,
+                samples_p=z_posterior_samples, samples_q=z_prior_samples,
             )
         else:
             raise NotImplementedError(
@@ -97,7 +93,12 @@ class GaussianVAE(nn.Module):
             )
 
     def loss(
-        self, x: Tensor, p_x_given_z: Distribution, q_z_given_x: tdist.normal.Normal, div_type: Divergence, div_scale: float = 1.0
+        self,
+        x: Tensor,
+        p_x_given_z: Distribution,
+        q_z_given_x: tdist.normal.Normal,
+        div_type: Divergence,
+        div_scale: float = 1.0,
     ) -> Tuple[Tensor, Dict[str, float]]:
         """Computes the ELBO (Evidence Lower Bound) loss for a Gaussian VAE.
 
@@ -172,9 +173,7 @@ class GaussianVAE(nn.Module):
             print("warning: infinite value in reconstruction nll")
 
         log_likelihood_estimates = torch.logsumexp(
-            z_nll_q - reconstruction_nll - z_nll_prior,
-            dim=0,
-            keepdim=False,
+            z_nll_q - reconstruction_nll - z_nll_prior, dim=0, keepdim=False,
         ) - math.log(n_samples)
         assert log_likelihood_estimates.shape == (bsize,)
 
@@ -189,44 +188,55 @@ class GaussianVAE(nn.Module):
 if __name__ == "__main__":
     import numpy as np
 
+    import vaes_ptorch.annealing as annealing
+    import vaes_ptorch.ddpm as ddpm_lib
     import vaes_ptorch.models as models
     import vaes_ptorch.plot as plot
-    import vaes_ptorch.annealing as annealing
     import vaes_ptorch.utils as ut
 
     # params
     DSET_SIZE = 16384
     DIM = 16
 
-    BATCH_SIZE = 64
+    BATCH_SIZE = 128
     LR = 1e-3
     N_EPOCHS = 10
 
     LATENT_DIM = 2
     N_LAYERS = 5
     H_DIM = 32
+    FOURIER_DIM = 32
+
+    # DDPM PRIOR MODEL PARAMS
+    T = 1000
+    H_DIM_DDPM = 16
+    N_LAYERS_DDPM = 4
+    LR_DDPM = 1e-2
+    N_EPOCHS_DDPM = 20
 
     # first pick a div: KL or MMD
     # then pick a target lambda:
     # - increase it to prioritize better reconstruction,
     # - lower it to improve inference (hard to make work here, though)
     DIV_TYPE = Divergence.KL
-    TARGET_LAMBDA = 0.15  # 0.15 for KL, 0.025 for MMD, bad inference still
+    TARGET_LAMBDA = 1.0  # 0.15 for KL, 0.025 for MMD, bad inference still
 
-    # model and optimizer init
-    encoder = models.get_mlp(
-        in_dim=DIM, out_dim=2 * LATENT_DIM, h_dim=H_DIM, n_hidden=N_LAYERS
+    # VAE init
+    encoder = nn.Sequential(
+        models.FourierFeatures(in_dim=DIM, out_dim=FOURIER_DIM, scale=1.0),
+        models.get_mlp(
+            in_dim=H_DIM, out_dim=2 * LATENT_DIM, h_dim=H_DIM, n_hidden=N_LAYERS
+        ),
     )
     decoder = models.get_mlp(
-        in_dim=LATENT_DIM, out_dim=2 * DIM, h_dim=H_DIM, n_hidden=N_LAYERS
+        in_dim=LATENT_DIM, out_dim=DIM, h_dim=H_DIM, n_hidden=N_LAYERS
     )
     net = GaussianVAE(
         encoder=encoder,
         decoder=decoder,
         latent_dim=LATENT_DIM,
-        obs_model=proba.ObsModel.Gaussian,
+        obs_model=proba.ObsModel.UnitGaussian,
     )
-    opt = torch.optim.Adam(net.parameters(), lr=LR)
 
     # data generation
     P = torch.zeros((2, DIM))
@@ -238,43 +248,125 @@ if __name__ == "__main__":
     data_x = data_x.view(-1, 2)
     plot.plot_points_series([data_x[i::6].numpy() for i in range(6)])
 
-    # VAE reconstruction training
-    scale_manager = annealing.SoftFreeBits(target_lambda=TARGET_LAMBDA)
-    net.train()
-    for epoch in range(N_EPOCHS):
+    # # Regression model sanity check
+    # mlp = nn.Sequential(
+    #     models.FourierFeatures(in_dim=DIM, out_dim=H_DIM, scale=1.0),
+    #     models.get_mlp(in_dim=H_DIM, out_dim=DIM, h_dim=H_DIM, n_hidden=N_LAYERS),
+    # )
+    # opt = torch.optim.Adam(mlp.parameters(), lr=LR)
+    # for epoch in range(N_EPOCHS):
+
+    #     info = {}
+
+    #     for _ in range(0, DSET_SIZE, BATCH_SIZE):
+    #         idx = torch.randint(data_x.shape[0], size=(BATCH_SIZE,))
+    #         batch = data_x[idx] @ P
+    #         pred = mlp(batch)
+    #         loss = torch.nn.functional.mse_loss(input=pred, target=batch)
+
+    #         opt.zero_grad()
+    #         loss.backward()
+    #         opt.step()
+
+    #         ut.update_info_dict(info, obs={"mse_loss": loss.item()})
+
+    #     print(f"MLP Training | Epoch {epoch + 1} | Info: {ut.print_info_dict(info)}.")
+    # # MLP baseline reconstruction
+    # mlp.eval()
+    # with torch.no_grad():
+    #     series = []
+    #     for i in range(6):
+    #         full_batch = data_x[i::6] @ P
+    #         x_hat = mlp(full_batch)
+    #         series.append(x_hat.numpy())
+    #     plot.plot_points_series(series)
+
+    # # VAE reconstruction training
+    # scale_manager = annealing.SoftFreeBits(target_lambda=TARGET_LAMBDA)
+    # opt = torch.optim.Adam(net.parameters(), lr=LR)
+    # net.train()
+    # for epoch in range(N_EPOCHS):
+
+    #     info = {}
+
+    #     for _ in range(0, DSET_SIZE, BATCH_SIZE):
+    #         idx = torch.randint(data_x.shape[0], size=(BATCH_SIZE,))
+    #         batch = data_x[idx] @ P
+    #         q_z_given_x, p_x_given_z = net(batch)
+    #         # loss, loss_info = net.loss(batch, p_x_given_z=p_x_given_z, q_z_given_x=q_z_given_x, div_type=DIV_TYPE, div_scale=scale_manager.get_scale())
+    #         loss, loss_info = net.loss(
+    #             batch,
+    #             p_x_given_z=p_x_given_z,
+    #             q_z_given_x=q_z_given_x,
+    #             div_type=DIV_TYPE,
+    #             div_scale=0.0001,
+    #         )
+
+    #         opt.zero_grad()
+    #         loss.backward()
+    #         opt.step()
+    #         scale_manager.step(loss_info["div"])
+
+    #         ut.update_info_dict(info, obs=loss_info)
+
+    #     print(f"VAE Training | Epoch {epoch + 1} | Info: {ut.print_info_dict(info)}.")
+
+    # # VAE reconstruction
+    # net.eval()
+    # with torch.no_grad():
+    #     series = []
+    #     for i in range(6):
+    #         full_batch = data_x[i::6] @ P
+    #         _, p_x_given_z = net(full_batch)
+    #         series.append(p_x_given_z.mean.numpy())
+    #     plot.plot_points_series(series)
+
+    # # VAE uniform sampling
+    # with torch.no_grad():
+    #     prior_samples = net.sample_prior(DSET_SIZE)
+    #     p_x_given_z = net.decode(prior_samples)
+    #     x_samples = p_x_given_z.sample().numpy()
+    #     x_mean = p_x_given_z.mean.numpy()
+    #     plot.plot_points_series([x_samples, x_mean])
+
+    # VAE prior training
+    ddpm_net = models.DDPMNet(
+        in_dim=DIM,
+        fourier_dim=FOURIER_DIM,
+        h_dim=H_DIM_DDPM,
+        n_hidden=N_LAYERS_DDPM,
+        n_timesteps=T,
+        fourier_inputs=True,
+    )
+    ddpm = ddpm_lib.DDPM(
+        net=ddpm_net, n_timesteps=T, sigma=ddpm_lib.SigmaSchedule.BetaTilde
+    )
+    opt = torch.optim.Adam(ddpm.parameters(), lr=LR_DDPM)
+    for epoch in range(N_EPOCHS_DDPM):
 
         info = {}
 
         for _ in range(0, DSET_SIZE, BATCH_SIZE):
             idx = torch.randint(data_x.shape[0], size=(BATCH_SIZE,))
             batch = data_x[idx] @ P
-            q_z_given_x, p_x_given_z = net(batch)
-            loss, loss_info = net.loss(batch, p_x_given_z=p_x_given_z, q_z_given_x=q_z_given_x, div_type=DIV_TYPE, div_scale=scale_manager.get_scale())
+            # q_z_given_x, _ = net(batch)
+            # z = q_z_given_x.mean.detach()
+            pred_noise, noise = ddpm(torch.zeros_like(batch))
+            loss = torch.nn.functional.mse_loss(input=pred_noise, target=noise)
 
             opt.zero_grad()
             loss.backward()
             opt.step()
-            scale_manager.step(loss_info["div"])
 
-            ut.update_info_dict(info, obs=loss_info)
+            ut.update_info_dict(info, obs={"mse_loss": loss.item()})
 
-        print(f"Epoch {epoch + 1} | Info: {ut.print_info_dict(info)}.")
+        print(f"DDPM Training | Epoch {epoch + 1} | Info: {ut.print_info_dict(info)}.")
 
-    # Testing the reconstruction
-    net.eval()
+    # VAE learned prior sampling
     with torch.no_grad():
-        series = []
-        for i in range(6):
-            full_batch = data_x[i::6] @ P
-            _, p_x_given_z = net(full_batch)
-            series.append(p_x_given_z.sample().numpy())
-            series.append(p_x_given_z.mean.numpy())
-        plot.plot_points_series(series)
-
-    # uniform sampling
-    with torch.no_grad():
-        prior_samples = net.sample_prior(DSET_SIZE)
-        p_x_given_z = net.decode(prior_samples) 
-        x_samples = p_x_given_z.sample().numpy()
-        x_mean = p_x_given_z.mean.numpy()
-        plot.plot_points_series([x_samples, x_mean])
+        prior_samples = ddpm.sample(device="cpu", shape=(100, DIM))
+        plot.plot_points_series([prior_samples])
+        # p_x_given_z = net.decode(prior_samples)
+        # x_samples = p_x_given_z.sample().numpy()
+        # x_mean = p_x_given_z.mean.numpy()
+        # plot.plot_points_series([x_samples, x_mean])

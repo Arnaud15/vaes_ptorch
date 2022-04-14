@@ -58,9 +58,7 @@ def train(
 
 
 def evaluate(
-    eval_data: DataLoader,
-    vae: vae_nn.GaussianVAE,
-    device: str = "cpu",
+    eval_data: DataLoader, vae: vae_nn.GaussianVAE, device: str = "cpu",
 ) -> Dict[str, float]:
     """Evaluate the ELBO and estimated NLL of a Gaussian VAE on a dataset."""
     step = 0

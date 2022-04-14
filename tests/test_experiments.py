@@ -18,9 +18,7 @@ TEST_EXP_PATH = os.path.join(exp.DATA_PATH, "temp_experiments")
 
 def test_init_args_basic():
     none_args = {
-        "info_vae": [
-            0,
-        ],
+        "info_vae": [0,],
         "div_scales": None,
         "div_scale": 1,
         "latent_dims": None,

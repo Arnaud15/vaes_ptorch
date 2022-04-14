@@ -44,8 +44,8 @@ class ResBlock(nn.Module):
 
 
 def compute_distances(x1: Tensor, x2: Tensor) -> Tensor:
-    norm1 = ei.reduce(x1**2, "n1 d -> n1 1", "sum")
-    norm2 = ei.reduce(x2**2, "n2 d -> 1 n2", "sum")
+    norm1 = ei.reduce(x1 ** 2, "n1 d -> n1 1", "sum")
+    norm2 = ei.reduce(x2 ** 2, "n2 d -> 1 n2", "sum")
     dot_prod = torch.matmul(x1, x2.t())
     return norm1 + norm2 - 2 * dot_prod
 
@@ -54,9 +54,7 @@ class VectorQuantizer1D(nn.Module):
     """Quantizes input sequences of vectors using a codebook"""
 
     def __init__(
-        self,
-        codebook_size: int,
-        dim: int,
+        self, codebook_size: int, dim: int,
     ):
         super().__init__()
         self.codebook = nn.Embedding(num_embeddings=codebook_size, embedding_dim=dim)
@@ -116,3 +114,90 @@ class SeqModel(nn.Module):
         return self.proj_head(
             prev_h_states
         )  # concatenate a 0 at the beginning and ignore the last hidden state
+
+
+class EmbeddingFourier(nn.Module):
+    MAX_LEN = 10_000
+
+    def __init__(self, n_pos: int, dim: int):
+        super().__init__()
+        pos_embed = self.make_position_embedding(n_pos=n_pos, dim=dim)
+        self.register_buffer("pos_embed", pos_embed)
+        self.mlp = torch.nn.Sequential(
+            torch.nn.Linear(dim, dim), torch.nn.SiLU(), torch.nn.Linear(dim, dim)
+        )
+        self.dim = dim
+
+    @classmethod
+    def make_position_embedding(cls, n_pos: int, dim: int):
+        assert dim % 2 == 0
+        exponents = (torch.arange(0, dim, 2) / dim).float()
+        dim_shares = 1.0 / (cls.MAX_LEN ** exponents)
+        pos = torch.arange(n_pos)
+        cos_emb = torch.cos(pos.unsqueeze(-1) * dim_shares.unsqueeze(0))
+        sin_emb = torch.sin(pos.unsqueeze(-1) * dim_shares.unsqueeze(0))
+        return torch.cat([sin_emb, cos_emb], dim=1)
+
+    def forward(self, t: Tensor) -> Tensor:
+        # Assume n_pos >= t >= 1, long tensor of shape (B, 1)
+        bsize = t.shape[0]
+        assert t.shape == (bsize, 1)
+        embeds = torch.index_select(self.pos_embed, dim=0, index=(t - 1).squeeze(-1))
+        out = self.mlp(embeds)
+        assert out.shape == (bsize, self.dim)
+        return out
+
+
+def make_fourier_features(in_dim, output_dim, scale):
+    assert output_dim % 2 == 0
+    return scale * torch.randn(in_dim, output_dim // 2)
+
+
+class FourierFeatures(nn.Module):
+    def __init__(self, in_dim: int, out_dim: int, scale: float = 1.0):
+        super().__init__()
+        self.register_buffer("b", make_fourier_features(in_dim, out_dim, scale=scale))
+        self.in_dim = in_dim
+        self.out_dim = out_dim
+
+    def forward(self, x):
+        assert x.shape[-1] == self.in_dim
+        assert out.shape[-1] == self.out_dim
+        return out
+
+
+class DDPMNet(nn.Module):
+    def __init__(
+        self,
+        in_dim: int,
+        fourier_dim: int,
+        n_timesteps: int,
+        h_dim: int,
+        n_hidden: int,
+        fourier_inputs: bool,
+    ):
+        super().__init__()
+        if fourier_inputs:
+            self.proj_x = nn.Sequential(
+                FourierFeatures(in_dim=in_dim, out_dim=fourier_dim, scale=1.0),
+            )
+            x_dim = fourier_dim
+        else:
+            self.proj_x = nn.Identity()
+            x_dim = in_dim
+
+        self.t_fourier_embedder = nn.Sequential(
+            EmbeddingFourier(n_pos=n_timesteps, dim=fourier_dim),
+            nn.Linear(fourier_dim, h_dim),
+            nn.SiLU(),
+            nn.Linear(h_dim, h_dim),
+        )
+
+        self.encode = get_mlp(in_dim=x_dim + h_dim, out_dim=in_dim, h_dim=h_dim, n_hidden=n_hidden)
+
+
+    def forward(self, x: Tensor, t: Tensor) -> Tensor:
+        assert t.dtype == torch.long
+        x = self.proj_x(x)
+        cond = self.t_fourier_embedder(t)
+        return self.encode(torch.cat([x, cond], dim=-1))
