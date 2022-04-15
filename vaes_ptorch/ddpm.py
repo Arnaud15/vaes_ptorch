@@ -1,5 +1,5 @@
 import enum
-from typing import Tuple, Optional
+from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -66,7 +66,24 @@ class DDPMNet(nn.Module):
             self.proj_t = lambda x: x/n_timesteps
             t_dim = 1
 
-        self.encode = models.get_mlp(in_dim=x_dim + t_dim, out_dim=in_dim, h_dim=h_dim, n_hidden=n_hidden)
+        # self.encode = models.get_mlp(in_dim=x_dim + t_dim, out_dim=in_dim, h_dim=h_dim, n_hidden=n_hidden)
+        self.encode = nn.Sequential(
+                nn.Linear(x_dim + t_dim, h_dim),
+                nn.SiLU(),
+                nn.Linear(h_dim, h_dim),
+                nn.SiLU(),
+                nn.Linear(h_dim, h_dim),
+                nn.SiLU(),
+                nn.Linear(h_dim, h_dim),
+                nn.SiLU(),
+                nn.Linear(h_dim, h_dim),
+                nn.SiLU(),
+                nn.Linear(h_dim, h_dim),
+                nn.SiLU(),
+                nn.Linear(h_dim, h_dim),
+                nn.SiLU(),
+                nn.Linear(h_dim, in_dim),
+        )
 
 
     def forward(self, x: Tensor, t: Tensor) -> Tensor:
@@ -129,23 +146,24 @@ class DDPM(nn.Module):
 
 if __name__ == "__main__":
     import numpy as np
+
     import vaes_ptorch.plot as plot
     import vaes_ptorch.trainer as trainer
 
     # data gen params
     DSET_SIZE = 16384
-    DIM = 8
+    DIM = 16
     BATCH_SIZE = 128
 
     # training params
-    N_STEPS = 5_000
+    N_STEPS = 30_000
     PRINT_EVERY = N_STEPS // 25
 
     # DDPM params
     T = 1000
-    H_DIM_DDPM = 32
+    H_DIM_DDPM = 64
     N_LAYERS_DDPM = 4
-    LR_DDPM = 1e-3
+    LR_DDPM = 25e-5
     FOURIER_DIM = 32
     N_SAMPLES_DDPM = 1000
 
@@ -173,7 +191,7 @@ if __name__ == "__main__":
         n_hidden=N_LAYERS_DDPM,
         n_timesteps=T,
         fourier_inputs=False,
-        fourier_t=True,
+        fourier_t=False,
     )
     ddpm = DDPM(
         net=ddpm_net, n_timesteps=T, sigma=SigmaSchedule.BetaTilde
@@ -191,4 +209,4 @@ if __name__ == "__main__":
     
     with torch.no_grad():
         samples = ddpm.sample(device="cpu", shape=(N_SAMPLES_DDPM, DIM))
-        plot.plot_points_series([samples[i::6].numpy() for i in range(6)])
+        plot.plot_points_series([samples.numpy()])
