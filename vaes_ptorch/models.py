@@ -162,42 +162,7 @@ class FourierFeatures(nn.Module):
 
     def forward(self, x):
         assert x.shape[-1] == self.in_dim
+        proj = torch.matmul(x, self.b)
+        out = torch.cat([torch.cos(proj), torch.sin(proj)], dim=-1)
         assert out.shape[-1] == self.out_dim
         return out
-
-
-class DDPMNet(nn.Module):
-    def __init__(
-        self,
-        in_dim: int,
-        fourier_dim: int,
-        n_timesteps: int,
-        h_dim: int,
-        n_hidden: int,
-        fourier_inputs: bool,
-    ):
-        super().__init__()
-        if fourier_inputs:
-            self.proj_x = nn.Sequential(
-                FourierFeatures(in_dim=in_dim, out_dim=fourier_dim, scale=1.0),
-            )
-            x_dim = fourier_dim
-        else:
-            self.proj_x = nn.Identity()
-            x_dim = in_dim
-
-        self.t_fourier_embedder = nn.Sequential(
-            EmbeddingFourier(n_pos=n_timesteps, dim=fourier_dim),
-            nn.Linear(fourier_dim, h_dim),
-            nn.SiLU(),
-            nn.Linear(h_dim, h_dim),
-        )
-
-        self.encode = get_mlp(in_dim=x_dim + h_dim, out_dim=in_dim, h_dim=h_dim, n_hidden=n_hidden)
-
-
-    def forward(self, x: Tensor, t: Tensor) -> Tensor:
-        assert t.dtype == torch.long
-        x = self.proj_x(x)
-        cond = self.t_fourier_embedder(t)
-        return self.encode(torch.cat([x, cond], dim=-1))
