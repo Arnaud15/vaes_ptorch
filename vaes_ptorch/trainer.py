@@ -21,7 +21,11 @@ class TrainArgs:
     def __post_init__(self):
         assert self.num_steps >= 0 and isinstance(self.num_steps, int), self
         assert self.print_every >= 0 and isinstance(self.print_every, int), self
-        assert self.smoothing > 0 and self.smoothing < 1.0 and isinstance(self.smoothing, float), self
+        assert (
+            self.smoothing > 0
+            and self.smoothing < 1.0
+            and isinstance(self.smoothing, float)
+        ), self
 
 
 def update_running(curr: Optional[float], obs: float, alpha: float = 0.9) -> float:

@@ -47,7 +47,9 @@ class DDPMNet(nn.Module):
         super().__init__()
         if fourier_inputs:
             assert fourier_dim is not None
-            self.proj_x = models.FourierFeatures(in_dim=in_dim, out_dim=fourier_dim, scale=1.0)
+            self.proj_x = models.FourierFeatures(
+                in_dim=in_dim, out_dim=fourier_dim, scale=1.0
+            )
             x_dim = fourier_dim
         else:
             self.proj_x = nn.Identity()
@@ -63,28 +65,27 @@ class DDPMNet(nn.Module):
             )
             t_dim = h_dim
         else:
-            self.proj_t = lambda x: x/n_timesteps
+            self.proj_t = lambda x: x / n_timesteps
             t_dim = 1
 
         # self.encode = models.get_mlp(in_dim=x_dim + t_dim, out_dim=in_dim, h_dim=h_dim, n_hidden=n_hidden)
         self.encode = nn.Sequential(
-                nn.Linear(x_dim + t_dim, h_dim),
-                nn.SiLU(),
-                nn.Linear(h_dim, h_dim),
-                nn.SiLU(),
-                nn.Linear(h_dim, h_dim),
-                nn.SiLU(),
-                nn.Linear(h_dim, h_dim),
-                nn.SiLU(),
-                nn.Linear(h_dim, h_dim),
-                nn.SiLU(),
-                nn.Linear(h_dim, h_dim),
-                nn.SiLU(),
-                nn.Linear(h_dim, h_dim),
-                nn.SiLU(),
-                nn.Linear(h_dim, in_dim),
+            nn.Linear(x_dim + t_dim, h_dim),
+            nn.SiLU(),
+            nn.Linear(h_dim, h_dim),
+            nn.SiLU(),
+            nn.Linear(h_dim, h_dim),
+            nn.SiLU(),
+            nn.Linear(h_dim, h_dim),
+            nn.SiLU(),
+            nn.Linear(h_dim, h_dim),
+            nn.SiLU(),
+            nn.Linear(h_dim, h_dim),
+            nn.SiLU(),
+            nn.Linear(h_dim, h_dim),
+            nn.SiLU(),
+            nn.Linear(h_dim, in_dim),
         )
-
 
     def forward(self, x: Tensor, t: Tensor) -> Tensor:
         assert t.dtype == torch.long
@@ -176,11 +177,13 @@ if __name__ == "__main__":
     data_x = data_x[None] + torch.randn((DSET_SIZE, data_x.shape[0], 2)) * 0.1
     data_x = data_x.view(-1, 2)
     plot.plot_points_series([data_x[i::6].numpy() for i in range(6)])
+
     def data_it(dataset, proj, batch_size):
         for _ in range(0, len(dataset), batch_size):
             idx = torch.randint(len(dataset), size=(batch_size,))
             batch = dataset[idx] @ proj
             yield batch
+
     train_data = data_it(data_x, P, BATCH_SIZE)
 
     # ddpm training
@@ -193,20 +196,19 @@ if __name__ == "__main__":
         fourier_inputs=False,
         fourier_t=False,
     )
-    ddpm = DDPM(
-        net=ddpm_net, n_timesteps=T, sigma=SigmaSchedule.BetaTilde
-    )
+    ddpm = DDPM(net=ddpm_net, n_timesteps=T, sigma=SigmaSchedule.BetaTilde)
 
     # loss and optimizer
     opt = torch.optim.Adam(ddpm.parameters(), lr=LR_DDPM)
+
     def mse_loss(pred_eps, true_eps):
-        loss = torch.nn.functional.mse_loss(pred_eps, true_eps, reduction='mean')
-        return loss, {'mse_loss': loss.item()}
+        loss = torch.nn.functional.mse_loss(pred_eps, true_eps, reduction="mean")
+        return loss, {"mse_loss": loss.item()}
 
     # training
     args = trainer.TrainArgs(N_STEPS, PRINT_EVERY)
     trainer.train_loop(ddpm, opt, mse_loss, args, train_data)
-    
+
     with torch.no_grad():
         samples = ddpm.sample(device="cpu", shape=(N_SAMPLES_DDPM, DIM))
         plot.plot_points_series([samples.numpy()])
